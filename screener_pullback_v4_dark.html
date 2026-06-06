@@ -922,6 +922,10 @@ async function syncAlertsToServer(){
 let liveData={},lastFetch=null,serverOnline=false;
 
 async function checkServer(){
+  // Se siamo già su Railway, il server è per definizione online
+  if(window.location.protocol==='https:'&&window.location.hostname!=='localhost'){
+    return true;
+  }
   try{
     const r=await fetch(`${getServerUrl()}/ping`,{signal:AbortSignal.timeout(3000)});
     const j=await r.json();return j.ok===true;
