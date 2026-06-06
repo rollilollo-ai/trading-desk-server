@@ -182,6 +182,22 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
   // GET /ping
+  // GET / — serve il file HTML dello screener
+  if (url.pathname === '/' || url.pathname === '/screener') {
+    const fs = require('fs');
+    const path = require('path');
+    const htmlPath = path.join(__dirname, 'screener_pullback_v4_dark.html');
+    if (fs.existsSync(htmlPath)) {
+      const html = fs.readFileSync(htmlPath, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(html);
+    } else {
+      res.writeHead(404, CORS);
+      res.end('File HTML non trovato. Carica screener_pullback_v4_dark.html nel repository.');
+    }
+    return;
+  }
+
   if (url.pathname === '/ping') {
     res.writeHead(200, CORS);
     res.end(JSON.stringify({ ok: true, ts: Date.now(), alerts: serverAlerts.filter(a=>a.status==='active').length }));
