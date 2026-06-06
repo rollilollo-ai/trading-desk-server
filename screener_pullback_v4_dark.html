@@ -958,11 +958,17 @@ async function fetchLiveData(){
     });
     lastFetch=new Date();
     const t=lastFetch.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
-    statusEl.textContent=`live · ${t} · ${updated} titoli`;
-    statusEl.style.color='var(--green)';
-    showToast(`Prezzi aggiornati: ${updated} titoli`,'ok');
-    syncAlertsToServer();
-    setTimeout(fetchLiveData,5*60*1000);
+    if(json.fetching&&updated===0){
+      statusEl.textContent='caricamento...';statusEl.style.color='var(--amber)';
+      showToast('Server sta caricando i prezzi, riprova tra 30s','warn');
+      setTimeout(fetchLiveData,30000);
+    } else {
+      statusEl.textContent=`live · ${t} · ${updated} titoli${json.fetching?' (agg.)':''}`;
+      statusEl.style.color='var(--green)';
+      showToast(`Prezzi aggiornati: ${updated} titoli`,'ok');
+      syncAlertsToServer();
+      setTimeout(fetchLiveData,5*60*1000);
+    }
   }catch(e){
     statusEl.textContent='errore fetch';statusEl.style.color='var(--red)';
     showToast('Errore: '+e.message,'warn');

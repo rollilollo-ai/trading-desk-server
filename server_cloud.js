@@ -175,6 +175,23 @@ setInterval(async () => {
   } catch(e) { console.error('Check error:', e.message); }
 }, 2 * 60 * 1000);
 
+// ── Prefetch all quotes in background on startup ──
+let fetchInProgress = false;
+
+async function prefetchAll() {
+  if (fetchInProgress) return;
+  fetchInProgress = true;
+  console.log(`[${new Date().toLocaleTimeString('it-IT')}] Prefetch prezzi avviato...`);
+  await getQuotes();
+  fetchInProgress = false;
+  console.log(`[${new Date().toLocaleTimeString('it-IT')}] Prefetch completato — ${Object.keys(cache).length} titoli in cache`);
+}
+
+// Prefetch immediato all'avvio
+prefetchAll();
+// Aggiorna ogni 5 minuti
+setInterval(prefetchAll, 5 * 60 * 1000);
+
 // ── HTTP SERVER ──
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS); res.end(); return; }
@@ -204,16 +221,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // GET /quotes
-  if (url.pathname === '/quotes') {
-    try {
-      const data = await getQuotes();
-      res.writeHead(200, CORS);
-      res.end(JSON.stringify({ ok: true, data, ts: Date.now() }));
-    } catch(e) {
-      res.writeHead(500, CORS);
-      res.end(JSON.stringify({ ok: false, error: e.message }));
-    }
+  // GET /quotes — risponde subito dalla cache
+  if (url.pathname === "/quotes") {
+    const result = {};
+    Object.keys(TICKER_MAP).forEach(tk => { if (cache[tk]) result[tk] = cache[tk]; });
+    res.writeHead(200, CORS);
+    res.end(JSON.stringify({ ok: true, data: result, cached: Object.keys(result).length, fetching: fetchInProgress, ts: Date.now() }));
     return;
   }
 
