@@ -27,7 +27,7 @@ function tdFetch(path) {
 }
 
 const cache = {};
-const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_TTL = 60 * 60 * 1000;
 
 const TICKER_MAP = {
   SAP:'XETRA',SIE:'XETRA',BAS:'XETRA',ALV:'XETRA',DTE:'XETRA',MUV2:'XETRA',
