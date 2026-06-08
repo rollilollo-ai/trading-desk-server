@@ -189,8 +189,8 @@ async function prefetchAll() {
 
 // Prefetch immediato all'avvio
 prefetchAll();
-// Aggiorna ogni 5 minuti
-setInterval(prefetchAll, 5 * 60 * 1000);
+// Aggiorna ogni 60 minuti
+setInterval(prefetchAll, 60 * 60 * 1000);
 
 // ── HTTP SERVER ──
 const server = http.createServer(async (req, res) => {
