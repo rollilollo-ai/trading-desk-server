@@ -1,16 +1,10 @@
 {
   "name": "trading-desk-server",
   "version": "1.0.0",
-  "description": "Trading Desk proxy server",
   "main": "server_cloud.js",
-  "scripts": {
-    "start": "node server_cloud.js"
-  },
-  "dependencies": {
-    "yahoo-finance2": "^2.11.3"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+  "scripts": { "start": "node server_cloud.js" },
+  "engines": { "node": ">=18.0.0" }
 }
+
+
 
