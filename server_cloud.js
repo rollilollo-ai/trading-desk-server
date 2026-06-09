@@ -1,12 +1,10 @@
 const https = require('https');
 const http = require('http');
 
-const TD_KEY = '9fae1acbd8904db09894fd659ab6aa70';
 const GMAIL_USER = 'rollilollo@gmail.com';
 const GMAIL_PASS = 'vjbfhgzulcrlhrfe';
 const PORT = process.env.PORT || 3737;
 
-// ── CORS ──
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -14,91 +12,122 @@ const CORS = {
   'Content-Type': 'application/json'
 };
 
-// ── TWELVE DATA ──
-function tdFetch(path) {
+// ── YAHOO FINANCE SYMBOLS ──
+// Yahoo usa suffissi per le borse europee
+const YAHOO_SYMBOLS = {
+  // DAX
+  SAP:   'SAP.DE',   SIE:  'SIE.DE',  BAS:  'BAS.DE',  ALV:  'ALV.DE',
+  DTE:   'DTE.DE',   MUV2: 'MUV2.DE', BMW:  'BMW.DE',  VOW3: 'VOW3.DE',
+  DBK:   'DBK.DE',   MBG:  'MBG.DE',  BAYN: 'BAYN.DE', ADS:  'ADS.DE',
+  // CAC
+  BNP:   'BNP.PA',   AI:   'AI.PA',   MC:   'MC.PA',   SAN:  'SAN.PA',
+  TTE:   'TTE.PA',   OR:   'OR.PA',   SGO:  'SGO.PA',  SU:   'SU.PA',
+  KER:   'KER.PA',   CAP:  'CAP.PA',  ACA:  'ACA.PA',
+  // FTSE 100 (prezzi in pence GBX su Yahoo)
+  HSBA:  'HSBA.L',   AZN:  'AZN.L',   SHEL: 'SHEL.L',  LSEG: 'LSEG.L',
+  ULVR:  'ULVR.L',   GSK:  'GSK.L',   RIO:  'RIO.L',   LLOY: 'LLOY.L',
+  BP:    'BP.L',     VOD:  'VOD.L',   BARC: 'BARC.L',  DGE:  'DGE.L',
+  // FTSE MIB
+  ENI:   'ENI.MI',   UCG:  'UCG.MI',  ISP:  'ISP.MI',  ENEL: 'ENEL.MI',
+  STM:   'STM.MI',   TIT:  'TIT.MI',  G:    'G.MI',    MB:   'MB.MI',
+  LDO:   'LDO.MI',   RACE: 'RACE.MI',
+  // IBEX
+  ITX:   'ITX.MC',   IBE:  'IBE.MC',  BBVA: 'BBVA.MC', BSAN: 'SAN.MC',
+  TEF:   'TEF.MC',   REP:  'REP.MC',  ACS:  'ACS.MC',  CLNX: 'CLNX.MC',
+  // AEX
+  ASML:  'ASML.AS',  ADYEN:'ADYEN.AS',HEIA: 'HEIA.AS', PHIA: 'PHI.AS',
+  NN:    'NN.AS',    AD:   'AD.AS',   RAND: 'RAND.AS',  WKL:  'WKL.AS',
+  AGN:   'AGN.AS',   AKZA: 'AKZA.AS', DSM:  'DSM-FIRMENICH.AS', UMG: 'UMG.AS'
+};
+
+// ── YAHOO FETCH ──
+function yahooFetch(symbols) {
   return new Promise((resolve, reject) => {
-    const url = `https://api.twelvedata.com${path}&apikey=${TD_KEY}`;
-    https.get(url, res => {
+    const syms = symbols.join(',');
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(syms)}&fields=regularMarketPrice,regularMarketPreviousClose,regularMarketChangePercent,regularMarketChange,regularMarketVolume,regularMarketDayHigh,regularMarketDayLow`;
+    const options = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
+      }
+    };
+    https.get(url, options, (res) => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(e); } });
+      res.on('end', () => {
+        try { resolve(JSON.parse(d)); }
+        catch(e) { reject(new Error('JSON parse error: ' + d.substring(0, 100))); }
+      });
     }).on('error', reject);
   });
 }
 
+// ── CACHE ──
 const cache = {};
-const CACHE_TTL = 60 * 60 * 1000; // 1 ora — 66 crediti × 8-10 volte/giorno = ~660 crediti (entro limite 800)
-
-const TICKER_MAP = {
-  SAP:'XETRA',SIE:'XETRA',BAS:'XETRA',ALV:'XETRA',DTE:'XETRA',MUV2:'XETRA',
-  BMW:'XETRA',VOW3:'XETRA',DBK:'XETRA',MBG:'XETRA',BAYN:'XETRA',ADS:'XETRA',
-  BNP:'XPAR',AI:'XPAR',MC:'XPAR',SAN:'XPAR',TTE:'XPAR',OR:'XPAR',
-  SGO:'XPAR',SU:'XPAR',KER:'XPAR',CAP:'XPAR',ACA:'XPAR',
-  HSBA:'LSE',AZN:'LSE',SHEL:'LSE',LSEG:'LSE',ULVR:'LSE',GSK:'LSE',
-  RIO:'LSE',LLOY:'LSE',BP:'LSE',VOD:'LSE',BARC:'LSE',DGE:'LSE',
-  ENI:'XMIL',UCG:'XMIL',ISP:'XMIL',ENEL:'XMIL',STM:'XMIL',
-  TIT:'XMIL',G:'XMIL',MB:'XMIL',LDO:'XMIL',RACE:'XMIL',
-  ITX:'XMAD',IBE:'XMAD',BBVA:'XMAD',TEF:'XMAD',REP:'XMAD',
-  ACS:'XMAD',CLNX:'XMAD',
-  ASML:'XAMS',ADYEN:'XAMS',HEIA:'XAMS',PHIA:'XAMS',NN:'XAMS',
-  AD:'XAMS',RAND:'XAMS',WKL:'XAMS',AGN:'XAMS',AKZA:'XAMS',DSM:'XAMS',UMG:'XAMS'
-};
+const CACHE_TTL = 60 * 60 * 1000; // 1 ora
 
 async function getQuotes() {
   const now = Date.now();
-  const symbols = Object.entries(TICKER_MAP).map(([tk, ex]) => `${tk}:${ex}`);
-  const toFetch = symbols.filter(s => {
-    const tk = s.split(':')[0];
+  const allYahooSyms = Object.values(YAHOO_SYMBOLS);
+  const toFetch = allYahooSyms.filter(ys => {
+    const tk = Object.keys(YAHOO_SYMBOLS).find(k => YAHOO_SYMBOLS[k] === ys);
     return !cache[tk] || (now - cache[tk].ts) > CACHE_TTL;
   });
 
   if (!toFetch.length) {
     console.log('Cache valida — nessun fetch necessario');
-    const result = {};
-    Object.keys(TICKER_MAP).forEach(tk => { if (cache[tk]) result[tk] = cache[tk]; });
-    return result;
+    return buildResult();
   }
 
-  // Usiamo batch da 8 ma solo una volta ogni CACHE_TTL
-  const BATCH = 8;
-  console.log(`Fetch ${toFetch.length} simboli in ${Math.ceil(toFetch.length/BATCH)} batch...`);
-  
+  // Yahoo supporta batch grandi — usiamo 20 per volta
+  const BATCH = 20;
+  console.log(`Fetch ${toFetch.length} simboli Yahoo...`);
+
   for (let i = 0; i < toFetch.length; i += BATCH) {
     const batch = toFetch.slice(i, i + BATCH);
     try {
-      const data = await tdFetch(`/quote?symbol=${encodeURIComponent(batch.join(','))}`);
-      const entries = data.symbol ? { [data.symbol]: data } : data;
+      const data = await yahooFetch(batch);
+      const quotes = data?.quoteResponse?.result || [];
       let saved = 0;
-      Object.entries(entries).forEach(([sym, q]) => {
-        const tk = sym.split(':')[0];
-        if (q && q.close && q.status !== 'error') {
+      quotes.forEach(q => {
+        // Trova il ticker interno dal simbolo Yahoo
+        const tk = Object.keys(YAHOO_SYMBOLS).find(k => YAHOO_SYMBOLS[k] === q.symbol);
+        if (!tk) return;
+        const price = q.regularMarketPrice;
+        const prevClose = q.regularMarketPreviousClose || price;
+        if (price > 0) {
           cache[tk] = {
             ts: now,
-            price: parseFloat(q.close),
-            changePct: parseFloat(q.percent_change || 0),
-            change: parseFloat(q.change || 0),
-            volume: parseInt(q.volume || 0),
-            prevClose: parseFloat(q.previous_close || q.close),
-            high: parseFloat(q.high || q.close),
-            low: parseFloat(q.low || q.close),
+            price,
+            changePct: q.regularMarketChangePercent || 0,
+            change: q.regularMarketChange || 0,
+            volume: q.regularMarketVolume || 0,
+            prevClose,
+            high: q.regularMarketDayHigh || price,
+            low: q.regularMarketDayLow || price,
           };
           saved++;
-        } else {
-          console.log(`  Skip ${sym}: ${q ? q.message || q.status : 'no data'}`);
         }
       });
       console.log(`  Batch ${Math.floor(i/BATCH)+1}: ${saved}/${batch.length} salvati`);
-    } catch(e) { console.error('TD batch error:', e.message); }
-    if (i + BATCH < toFetch.length) await new Promise(r => setTimeout(r, 8000));
+    } catch(e) {
+      console.error('Yahoo batch error:', e.message);
+    }
+    if (i + BATCH < toFetch.length) await new Promise(r => setTimeout(r, 500));
   }
 
-  const result = {};
-  Object.keys(TICKER_MAP).forEach(tk => { if (cache[tk]) result[tk] = cache[tk]; });
+  const result = buildResult();
   console.log(`Cache totale: ${Object.keys(result).length} titoli`);
   return result;
 }
 
-// ── EMAIL via Gmail SMTP (raw SMTP over TLS) ──
+function buildResult() {
+  const result = {};
+  Object.keys(YAHOO_SYMBOLS).forEach(tk => { if (cache[tk]) result[tk] = cache[tk]; });
+  return result;
+}
+
+// ── EMAIL Gmail SMTP ──
 function sendEmail(to, subject, body) {
   return new Promise((resolve, reject) => {
     const { createConnection } = require('tls');
@@ -117,22 +146,19 @@ function sendEmail(to, subject, body) {
 
     const socket = createConnection({ host: 'smtp.gmail.com', port: 465 });
     socket.setTimeout(15000);
-
-    const send = (cmd) => { socket.write(cmd + '\r\n'); };
+    const send = cmd => socket.write(cmd + '\r\n');
 
     socket.on('data', d => {
       const line = d.toString().trim();
-      console.log('SMTP ←', line.substring(0, 60));
-      if (step === 0 && line.startsWith('220')) { send('EHLO tradingdesk'); step++; }
-      else if (step === 1 && line.includes('250') && line.includes('AUTH')) { send(`AUTH PLAIN ${authStr}`); step++; }
-      else if (step === 1 && line.startsWith('250-') ) { /* multi-line ehlo, wait */ }
-      else if (step === 1 && line.startsWith('250 ')) { send(`AUTH PLAIN ${authStr}`); step++; }
-      else if (step === 2 && line.startsWith('235')) { send(`MAIL FROM:<${GMAIL_USER}>`); step++; }
-      else if (step === 3 && line.startsWith('250')) { send(`RCPT TO:<${to}>`); step++; }
-      else if (step === 4 && line.startsWith('250')) { send('DATA'); step++; }
-      else if (step === 5 && line.startsWith('354')) { send(msg + '\r\n.'); step++; }
-      else if (step === 6 && line.startsWith('250')) { send('QUIT'); step++; resolve({ ok: true }); }
-      else if (line.startsWith('5')) { socket.destroy(); reject(new Error('SMTP error: ' + line)); }
+      if (step === 0 && line.startsWith('220'))             { send('EHLO tradingdesk'); step++; }
+      else if (step === 1 && line.startsWith('250-'))       { /* multi-line, wait */ }
+      else if (step === 1 && line.startsWith('250 '))       { send(`AUTH PLAIN ${authStr}`); step++; }
+      else if (step === 2 && line.startsWith('235'))        { send(`MAIL FROM:<${GMAIL_USER}>`); step++; }
+      else if (step === 3 && line.startsWith('250'))        { send(`RCPT TO:<${to}>`); step++; }
+      else if (step === 4 && line.startsWith('250'))        { send('DATA'); step++; }
+      else if (step === 5 && line.startsWith('354'))        { send(msg + '\r\n.'); step++; }
+      else if (step === 6 && line.startsWith('250'))        { send('QUIT'); step++; resolve({ ok: true }); }
+      else if (line.startsWith('5'))                        { socket.destroy(); reject(new Error('SMTP: ' + line)); }
     });
     socket.on('error', reject);
     socket.on('timeout', () => { socket.destroy(); reject(new Error('SMTP timeout')); });
@@ -140,11 +166,9 @@ function sendEmail(to, subject, body) {
 }
 
 // ── ALERT CHECKER ──
-// Salviamo gli alert in memoria (il client li manda al server)
 let serverAlerts = [];
 
 function checkAlerts(quotes) {
-  const now = Date.now();
   serverAlerts.forEach(async (a) => {
     if (a.status !== 'active' || !a.email) return;
     const q = quotes[a.ticker];
@@ -152,12 +176,12 @@ function checkAlerts(quotes) {
     const price = q.price;
     const tol = a.target * ((a.tol || 0.5) / 100);
     let triggered = false;
-    if ((a.type === 'below' || a.type === 'stop' || a.type === 'support') && price <= a.target + tol) triggered = true;
-    if ((a.type === 'above' || a.type === 'target' || a.type === 'resistance') && price >= a.target - tol) triggered = true;
+    if (['below','stop','support'].includes(a.type) && price <= a.target + tol) triggered = true;
+    if (['above','target','resistance'].includes(a.type) && price >= a.target - tol) triggered = true;
     if (triggered && !a.notifiedAt) {
-      a.notifiedAt = now;
+      a.notifiedAt = Date.now();
       a.status = price <= a.target ? 'triggered-down' : 'triggered-up';
-      const subject = `🔔 Alert ${a.ticker} — ${price.toFixed(2)} ${a.type === 'below' || a.type === 'stop' ? '↓' : '↑'} ${a.target}`;
+      const subject = `🔔 Alert ${a.ticker} — ${price.toFixed(2)} ${['below','stop'].includes(a.type) ? '↓' : '↑'} ${a.target}`;
       const body = [
         `Alert scattato: ${a.ticker} (${a.name || a.ticker})`,
         ``,
@@ -166,11 +190,10 @@ function checkAlerts(quotes) {
         `Tipo:            ${a.type}`,
         ``,
         a.emailmsg ? `Nota: ${a.emailmsg}` : '',
-        ``,
-        `Variazione giornaliera: ${q.changePct >= 0 ? '+' : ''}${q.changePct.toFixed(2)}%`,
+        `Variazione:      ${q.changePct >= 0 ? '+' : ''}${q.changePct.toFixed(2)}%`,
         ``,
         `— Trading Desk · ${new Date().toLocaleString('it-IT')}`
-      ].filter(l => l !== undefined).join('\n');
+      ].filter(Boolean).join('\n');
       try {
         await sendEmail(a.email, subject, body);
         console.log(`✉ Email inviata a ${a.email} per ${a.ticker}`);
@@ -181,72 +204,59 @@ function checkAlerts(quotes) {
   });
 }
 
-// Controlla prezzi e alert ogni 2 minuti
-setInterval(async () => {
-  if (serverAlerts.filter(a => a.status === 'active').length === 0) return;
-  console.log(`[${new Date().toLocaleTimeString('it-IT')}] Controllo alert...`);
-  try {
-    const quotes = await getQuotes();
-    checkAlerts(quotes);
-  } catch(e) { console.error('Check error:', e.message); }
-}, 5 * 60 * 1000);
-
-// ── Prefetch all quotes in background on startup ──
+// ── BACKGROUND PREFETCH ──
 let fetchInProgress = false;
 
 async function prefetchAll() {
   if (fetchInProgress) return;
   fetchInProgress = true;
   console.log(`[${new Date().toLocaleTimeString('it-IT')}] Prefetch prezzi avviato...`);
-  await getQuotes();
+  try {
+    const quotes = await getQuotes();
+    if (serverAlerts.filter(a => a.status === 'active').length > 0) checkAlerts(quotes);
+  } catch(e) { console.error('Prefetch error:', e.message); }
   fetchInProgress = false;
   console.log(`[${new Date().toLocaleTimeString('it-IT')}] Prefetch completato — ${Object.keys(cache).length} titoli in cache`);
 }
 
-// Prefetch immediato all'avvio
 prefetchAll();
-// Aggiorna ogni ora
-setInterval(prefetchAll, 60 * 60 * 1000);
+setInterval(prefetchAll, 60 * 60 * 1000); // ogni ora
 
 // ── HTTP SERVER ──
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS); res.end(); return; }
-
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
-  // GET /ping
-  // GET / — serve il file HTML dello screener
+  // Serve HTML
   if (url.pathname === '/' || url.pathname === '/screener') {
-    const fs = require('fs');
-    const path = require('path');
+    const fs = require('fs'), path = require('path');
     const htmlPath = path.join(__dirname, 'screener_pullback_v4_dark.html');
     if (fs.existsSync(htmlPath)) {
-      const html = fs.readFileSync(htmlPath, 'utf8');
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(html);
+      res.end(fs.readFileSync(htmlPath, 'utf8'));
     } else {
       res.writeHead(404, CORS);
-      res.end('File HTML non trovato. Carica screener_pullback_v4_dark.html nel repository.');
+      res.end('File HTML non trovato');
     }
     return;
   }
 
+  // Ping
   if (url.pathname === '/ping') {
     res.writeHead(200, CORS);
     res.end(JSON.stringify({ ok: true, ts: Date.now(), alerts: serverAlerts.filter(a=>a.status==='active').length }));
     return;
   }
 
-  // GET /quotes — risponde subito dalla cache
-  if (url.pathname === "/quotes") {
-    const result = {};
-    Object.keys(TICKER_MAP).forEach(tk => { if (cache[tk]) result[tk] = cache[tk]; });
+  // Quotes — risposta immediata dalla cache
+  if (url.pathname === '/quotes') {
+    const result = buildResult();
     res.writeHead(200, CORS);
     res.end(JSON.stringify({ ok: true, data: result, cached: Object.keys(result).length, fetching: fetchInProgress, ts: Date.now() }));
     return;
   }
 
-  // POST /alerts — il client sincronizza i suoi alert
+  // Sync alerts
   if (url.pathname === '/alerts' && req.method === 'POST') {
     let body = '';
     req.on('data', c => body += c);
@@ -255,19 +265,12 @@ const server = http.createServer(async (req, res) => {
         serverAlerts = JSON.parse(body);
         console.log(`Alert sincronizzati: ${serverAlerts.filter(a=>a.status==='active').length} attivi`);
         res.writeHead(200, CORS);
-        res.end(JSON.stringify({ ok: true, active: serverAlerts.filter(a=>a.status==='active').length }));
+        res.end(JSON.stringify({ ok: true }));
       } catch(e) {
         res.writeHead(400, CORS);
         res.end(JSON.stringify({ ok: false, error: 'JSON invalido' }));
       }
     });
-    return;
-  }
-
-  // GET /alerts/status — stato alert dal server
-  if (url.pathname === '/alerts/status') {
-    res.writeHead(200, CORS);
-    res.end(JSON.stringify({ ok: true, alerts: serverAlerts }));
     return;
   }
 
@@ -277,11 +280,8 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`\n╔══════════════════════════════════════╗`);
-  console.log(`║   TRADING DESK — Cloud Server        ║`);
-  console.log(`║   Porta: ${PORT}                        ║`);
-  console.log(`║   Twelve Data: ...${TD_KEY.slice(-6)}        ║`);
+  console.log(`║   TRADING DESK — Yahoo Finance       ║`);
+  console.log(`║   Porta: ${PORT}  — nessun limite API  ║`);
   console.log(`║   Email: ${GMAIL_USER}  ║`);
   console.log(`╚══════════════════════════════════════╝\n`);
-  console.log(`Controllo alert ogni 2 minuti.`);
-  console.log(`Prezzi in cache per 5 minuti.\n`);
 });
