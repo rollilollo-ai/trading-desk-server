@@ -1,8 +1,10 @@
+const https = require('https');
 const http = require('http');
-const PORT = process.env.PORT || 3737;
 
+const FMP_KEY = 'eCP5esV70PtRsajOonY63nwrFjfG90WA';
 const GMAIL_USER = 'rollilollo@gmail.com';
 const GMAIL_PASS = 'vjbfhgzulcrlhrfe';
+const PORT = process.env.PORT || 3737;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -11,8 +13,8 @@ const CORS = {
   'Content-Type': 'application/json'
 };
 
-// ── YAHOO SYMBOLS ──
-const YAHOO_SYMBOLS = {
+// FMP usa simboli con suffisso borsa
+const FMP_SYMBOLS = {
   SAP:'SAP.DE', SIE:'SIE.DE', BAS:'BAS.DE', ALV:'ALV.DE',
   DTE:'DTE.DE', MUV2:'MUV2.DE', BMW:'BMW.DE', VOW3:'VOW3.DE',
   DBK:'DBK.DE', MBG:'MBG.DE', BAYN:'BAYN.DE', ADS:'ADS.DE',
@@ -32,72 +34,69 @@ const YAHOO_SYMBOLS = {
   AGN:'AGN.AS', AKZA:'AKZA.AS', DSM:'DSM.AS', UMG:'UMG.AS'
 };
 
-// ── CACHE ──
-const cache = {};
-const CACHE_TTL = 60 * 60 * 1000; // 1 ora
-let yf = null;
-let fetchInProgress = false;
-
-async function initYF() {
-  if (!yf) {
-    yf = (await import('yahoo-finance2')).default;
-    // Disabilita notifiche di validazione
-    yf.setGlobalConfig({ validation: { logErrors: false } });
-  }
-  return yf;
+function fmpFetch(symbols) {
+  return new Promise((resolve, reject) => {
+    const syms = symbols.join(',');
+    const path = `/api/v3/quote/${encodeURIComponent(syms)}?apikey=${FMP_KEY}`;
+    https.get({ hostname: 'financialmodelingprep.com', path, headers: { 'User-Agent': 'TradingDesk/1.0' } }, res => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        try { resolve(JSON.parse(d)); }
+        catch(e) { reject(new Error('JSON error: ' + d.substring(0, 200))); }
+      });
+    }).on('error', reject);
+  });
 }
+
+const cache = {};
+const CACHE_TTL = 60 * 60 * 1000;
+let fetchInProgress = false;
 
 async function getQuotes() {
   const now = Date.now();
-  const lib = await initYF();
-  const allSymbols = Object.values(YAHOO_SYMBOLS);
-  const toFetch = allSymbols.filter(ys => {
-    const tk = Object.keys(YAHOO_SYMBOLS).find(k => YAHOO_SYMBOLS[k] === ys);
+  const allSyms = Object.values(FMP_SYMBOLS);
+  const toFetch = allSyms.filter(s => {
+    const tk = Object.keys(FMP_SYMBOLS).find(k => FMP_SYMBOLS[k] === s);
     return !cache[tk] || (now - cache[tk].ts) > CACHE_TTL;
   });
 
-  if (!toFetch.length) {
-    console.log('Cache valida');
-    return buildResult();
-  }
+  if (!toFetch.length) { console.log('Cache valida'); return buildResult(); }
 
-  console.log(`Fetch ${toFetch.length} simboli...`);
-  const BATCH = 10;
+  console.log(`Fetch ${toFetch.length} simboli FMP...`);
+  // FMP supporta batch grandi in una sola chiamata
+  const BATCH = 30;
   for (let i = 0; i < toFetch.length; i += BATCH) {
     const batch = toFetch.slice(i, i + BATCH);
     try {
-      const results = await lib.quote(batch);
-      const arr = Array.isArray(results) ? results : [results];
+      const data = await fmpFetch(batch);
+      if (!Array.isArray(data)) { console.error('FMP risposta non array:', JSON.stringify(data).substring(0,200)); continue; }
       let saved = 0;
-      arr.forEach(q => {
-        if (!q || !q.regularMarketPrice) return;
-        const tk = Object.keys(YAHOO_SYMBOLS).find(k => YAHOO_SYMBOLS[k] === q.symbol);
-        if (!tk) return;
+      data.forEach(q => {
+        const tk = Object.keys(FMP_SYMBOLS).find(k => FMP_SYMBOLS[k] === q.symbol);
+        if (!tk || !q.price) return;
         cache[tk] = {
           ts: now,
-          price: q.regularMarketPrice,
-          changePct: q.regularMarketChangePercent || 0,
-          change: q.regularMarketChange || 0,
-          volume: q.regularMarketVolume || 0,
-          prevClose: q.regularMarketPreviousClose || q.regularMarketPrice,
-          high: q.regularMarketDayHigh || q.regularMarketPrice,
-          low: q.regularMarketDayLow || q.regularMarketPrice,
+          price: q.price,
+          changePct: q.changesPercentage || 0,
+          change: q.change || 0,
+          volume: q.volume || 0,
+          prevClose: q.previousClose || q.price,
+          high: q.dayHigh || q.price,
+          low: q.dayLow || q.price,
         };
         saved++;
       });
       console.log(`  Batch ${Math.floor(i/BATCH)+1}: ${saved}/${batch.length} salvati`);
-    } catch(e) {
-      console.error(`  Batch error:`, e.message);
-    }
-    if (i + BATCH < toFetch.length) await new Promise(r => setTimeout(r, 300));
+    } catch(e) { console.error('FMP batch error:', e.message); }
+    if (i + BATCH < toFetch.length) await new Promise(r => setTimeout(r, 500));
   }
-
   return buildResult();
 }
 
 function buildResult() {
   const r = {};
-  Object.keys(YAHOO_SYMBOLS).forEach(tk => { if (cache[tk]) r[tk] = cache[tk]; });
+  Object.keys(FMP_SYMBOLS).forEach(tk => { if (cache[tk]) r[tk] = cache[tk]; });
   return r;
 }
 
@@ -114,7 +113,7 @@ function sendEmail(to, subject, body) {
     const send = c => socket.write(c + '\r\n');
     socket.on('data', d => {
       const l = d.toString().trim();
-      if (step===0&&l.startsWith('220'))      { send('EHLO tradingdesk'); step++; }
+      if (step===0&&l.startsWith('220'))       { send('EHLO tradingdesk'); step++; }
       else if (step===1&&l.startsWith('250-')) { }
       else if (step===1&&l.startsWith('250 ')) { send(`AUTH PLAIN ${auth}`); step++; }
       else if (step===2&&l.startsWith('235'))  { send(`MAIL FROM:<${GMAIL_USER}>`); step++; }
@@ -129,7 +128,7 @@ function sendEmail(to, subject, body) {
   });
 }
 
-// ── ALERT CHECKER ──
+// ── ALERTS ──
 let serverAlerts = [];
 function checkAlerts(quotes) {
   serverAlerts.forEach(async a => {
@@ -143,9 +142,9 @@ function checkAlerts(quotes) {
       a.notifiedAt = Date.now();
       a.status = price <= a.target ? 'triggered-down' : 'triggered-up';
       const subject = `🔔 Alert ${a.ticker} — ${price.toFixed(2)} ${['below','stop'].includes(a.type)?'↓':'↑'} ${a.target}`;
-      const body = [`Alert: ${a.ticker}`,`Prezzo: ${price.toFixed(4)}`,`Target: ${a.target}`,`Variazione: ${q.changePct>=0?'+':''}${q.changePct.toFixed(2)}%`,``,a.emailmsg||'',`— Trading Desk · ${new Date().toLocaleString('it-IT')}`].filter(Boolean).join('\n');
-      try { await sendEmail(a.email, subject, body); console.log(`✉ Email → ${a.email} per ${a.ticker}`); }
-      catch(e) { console.error(`✗ Email fallita:`, e.message); }
+      const body = [`Alert: ${a.ticker}`,`Prezzo: ${price.toFixed(4)}`,`Target: ${a.target}`,a.emailmsg||'',`— Trading Desk · ${new Date().toLocaleString('it-IT')}`].filter(Boolean).join('\n');
+      try { await sendEmail(a.email, subject, body); console.log(`✉ ${a.ticker} → ${a.email}`); }
+      catch(e) { console.error(`✗ Email:`, e.message); }
     }
   });
 }
@@ -167,7 +166,7 @@ async function prefetchAll() {
 prefetchAll();
 setInterval(prefetchAll, 60 * 60 * 1000);
 
-// ── SERVER ──
+// ── HTTP SERVER ──
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS); res.end(); return; }
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -208,8 +207,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n╔══════════════════════════════════╗`);
-  console.log(`║  TRADING DESK — Yahoo Finance    ║`);
-  console.log(`║  Porta: ${PORT} — nessun limite   ║`);
-  console.log(`╚══════════════════════════════════╝\n`);
+  console.log(`\n╔══════════════════════════════════════╗`);
+  console.log(`║  TRADING DESK — FMP                  ║`);
+  console.log(`║  Porta: ${PORT}                        ║`);
+  console.log(`╚══════════════════════════════════════╝\n`);
 });
