@@ -173,7 +173,7 @@ setInterval(async () => {
     const quotes = await getQuotes();
     checkAlerts(quotes);
   } catch(e) { console.error('Check error:', e.message); }
-}, 2 * 60 * 1000);
+}, 60 * 60 * 1000);
 
 // ── Prefetch all quotes in background on startup ──
 let fetchInProgress = false;
