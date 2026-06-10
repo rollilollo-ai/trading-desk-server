@@ -1,6 +1,7 @@
 const https = require('https');
 const http = require('http');
 
+const AV_KEY = '2XVXL4BE27PUEXD6';  // <-- da sostituire
 const GMAIL_USER = 'rollilollo@gmail.com';
 const GMAIL_PASS = 'vjbfhgzulcrlhrfe';
 const PORT = process.env.PORT || 3737;
@@ -12,110 +13,107 @@ const CORS = {
   'Content-Type': 'application/json'
 };
 
-// Stooq usa stessa notazione: SAP.DE, ENI.MI, BNP.PA, ASML.AS, HSBA.L ecc.
+// Alpha Vantage usa simboli con suffisso borsa: SAP.DEX, ENI.MIL, BNP.PAR ecc.
+// Mappa ticker interno -> simbolo Alpha Vantage
 const SYMBOLS = {
-  SAP:'SAP.DE', SIE:'SIE.DE', BAS:'BAS.DE', ALV:'ALV.DE',
-  DTE:'DTE.DE', MUV2:'MUV2.DE', BMW:'BMW.DE', VOW3:'VOW3.DE',
-  DBK:'DBK.DE', MBG:'MBG.DE', BAYN:'BAYN.DE', ADS:'ADS.DE',
-  BNP:'BNP.PA', AI:'AI.PA', MC:'MC.PA', SAN:'SAN.PA',
-  TTE:'TTE.PA', OR:'OR.PA', SGO:'SGO.PA', SU:'SU.PA',
-  KER:'KER.PA', CAP:'CAP.PA', ACA:'ACA.PA',
-  HSBA:'HSBA.L', AZN:'AZN.L', SHEL:'SHEL.L', LSEG:'LSEG.L',
-  ULVR:'ULVR.L', GSK:'GSK.L', RIO:'RIO.L', LLOY:'LLOY.L',
-  BP:'BP.L', VOD:'VOD.L', BARC:'BARC.L', DGE:'DGE.L',
-  ENI:'ENI.MI', UCG:'UCG.MI', ISP:'ISP.MI', ENEL:'ENEL.MI',
-  STM:'STM.MI', TIT:'TIT.MI', G:'G.MI', MB:'MB.MI',
-  LDO:'LDO.MI', RACE:'RACE.MI',
-  ITX:'ITX.MC', IBE:'IBE.MC', BBVA:'BBVA.MC', BSAN:'SAN.MC',
-  TEF:'TEF.MC', REP:'REP.MC', ACS:'ACS.MC', CLNX:'CLNX.MC',
-  ASML:'ASML.AS', ADYEN:'ADYEN.AS', HEIA:'HEIA.AS', PHIA:'PHIA.AS',
-  NN:'NN.AS', AD:'AD.AS', RAND:'RAND.AS', WKL:'WKL.AS',
-  AGN:'AGN.AS', AKZA:'AKZA.AS', DSM:'DSM.AS', UMG:'UMG.AS'
+  SAP:'SAP.DEX',   SIE:'SIE.DEX',   BAS:'BAS.DEX',   ALV:'ALV.DEX',
+  DTE:'DTE.DEX',   MUV2:'MUV2.DEX', BMW:'BMW.DEX',   VOW3:'VOW3.DEX',
+  DBK:'DBK.DEX',   MBG:'MBG.DEX',   BAYN:'BAYN.DEX', ADS:'ADS.DEX',
+  BNP:'BNP.PAR',   AI:'AI.PAR',     MC:'MC.PAR',     SAN:'SAN.PAR',
+  TTE:'TTE.PAR',   OR:'OR.PAR',     SGO:'SGO.PAR',   SU:'SU.PAR',
+  KER:'KER.PAR',   CAP:'CAP.PAR',   ACA:'ACA.PAR',
+  HSBA:'HSBA.LON', AZN:'AZN.LON',   SHEL:'SHEL.LON', LSEG:'LSEG.LON',
+  ULVR:'ULVR.LON', GSK:'GSK.LON',   RIO:'RIO.LON',   LLOY:'LLOY.LON',
+  BP:'BP.LON',     VOD:'VOD.LON',    BARC:'BARC.LON', DGE:'DGE.LON',
+  ENI:'ENI.MIL',   UCG:'UCG.MIL',   ISP:'ISP.MIL',   ENEL:'ENEL.MIL',
+  STM:'STM.MIL',   TIT:'TIT.MIL',   G:'G.MIL',       MB:'MB.MIL',
+  LDO:'LDO.MIL',   RACE:'RACE.MIL',
+  ITX:'ITX.MCD',   IBE:'IBE.MCD',   BBVA:'BBVA.MCD', BSAN:'SAN.MCD',
+  TEF:'TEF.MCD',   REP:'REP.MCD',   ACS:'ACS.MCD',   CLNX:'CLNX.MCD',
+  ASML:'ASML.AMS', ADYEN:'ADYEN.AMS',HEIA:'HEIA.AMS', PHIA:'PHIA.AMS',
+  NN:'NN.AMS',     AD:'AD.AMS',     RAND:'RAND.AMS', WKL:'WKL.AMS',
+  AGN:'AGN.AMS',   AKZA:'AKZA.AMS', DSM:'DSM.AMS',   UMG:'UMG.AMS'
 };
 
-// ── STOOQ — CSV pubblico, gratuito, zero API key ──
-// URL: https://stooq.com/q/l/?s=SAP.DE&f=sd2t2ohlcv&h&e=csv
-// Risposta CSV: Symbol,Date,Time,Open,High,Low,Close,Volume
-function stooqFetch(symbol) {
+// ── ALPHA VANTAGE — GLOBAL_QUOTE ──
+function avFetch(symbol) {
   return new Promise((resolve, reject) => {
-    const s = symbol.toLowerCase();
-    const path = `/q/l/?s=${encodeURIComponent(s)}&f=sd2t2ohlcv&h&e=csv`;
-    const options = {
-      hostname: 'stooq.com',
+    const path = `/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${AV_KEY}`;
+    const req = https.get({
+      hostname: 'www.alphavantage.co',
       path,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Referer': 'https://stooq.com/',
-      }
-    };
-    const req = https.get(options, res => {
+      headers: { 'User-Agent': 'TradingDesk/1.0' }
+    }, res => {
       let d = '';
       res.on('data', c => d += c);
       res.on('end', () => {
         try {
-          const lines = d.trim().split('\n');
-          // lines[0] = header, lines[1] = data
-          if (lines.length < 2) { resolve(null); return; }
-          const cols = lines[1].split(',');
-          // Symbol,Date,Time,Open,High,Low,Close,Volume
-          const close = parseFloat(cols[6]);
-          const open  = parseFloat(cols[3]);
-          const high  = parseFloat(cols[4]);
-          const low   = parseFloat(cols[5]);
-          const vol   = parseInt(cols[7]) || 0;
-          if (!close || isNaN(close) || close === 0) { resolve(null); return; }
-          const change    = close - open;
-          const changePct = open > 0 ? ((close - open) / open) * 100 : 0;
-          resolve({ price: close, changePct, change, volume: vol, prevClose: open, high, low });
-        } catch(e) {
-          reject(new Error('Parse error: ' + d.substring(0, 100)));
-        }
+          const json = JSON.parse(d);
+          const q = json['Global Quote'];
+          if (!q || !q['05. price']) { resolve(null); return; }
+          const price    = parseFloat(q['05. price']);
+          const prevClose= parseFloat(q['08. previous close']);
+          const change   = parseFloat(q['09. change']);
+          const changePct= parseFloat(q['10. change percent']?.replace('%',''));
+          const high     = parseFloat(q['03. high']);
+          const low      = parseFloat(q['04. low']);
+          const volume   = parseInt(q['06. volume']) || 0;
+          if (!price || isNaN(price)) { resolve(null); return; }
+          resolve({ price, changePct: changePct||0, change: change||0, volume, prevClose: prevClose||price, high: high||price, low: low||price });
+        } catch(e) { reject(new Error('JSON error: ' + d.substring(0,150))); }
       });
     });
-    req.setTimeout(10000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.setTimeout(12000, () => { req.destroy(); reject(new Error('timeout')); });
     req.on('error', reject);
   });
 }
 
 const cache = {};
-const CACHE_TTL = 5 * 60 * 1000; // 5 minuti
+const CACHE_TTL = 15 * 60 * 1000; // 15 minuti — il giro completo dura ~15 min con 25 req/giorno
+const BATCH_SIZE = 25;             // Alpha Vantage free: 25 chiamate/giorno
 let fetchInProgress = false;
+let rotationIndex = 0;             // indice rotante: ogni run aggiorna 25 simboli diversi
 
 async function getQuotes() {
   const now = Date.now();
-  const tickers = Object.keys(SYMBOLS).filter(tk => !cache[tk] || (now - cache[tk].ts) > CACHE_TTL);
+  const allTickers = Object.keys(SYMBOLS);
 
-  if (!tickers.length) { console.log('Cache valida'); return buildResult(); }
+  // Priorità: prima quelli mai fetchati, poi quelli più vecchi
+  const expired = allTickers.filter(tk => !cache[tk] || (now - cache[tk].ts) > CACHE_TTL);
+  const toFetch = expired.length > 0 ? expired : allTickers;
 
-  console.log(`Fetch ${tickers.length} simboli Stooq...`);
+  // Prendi i prossimi BATCH_SIZE dalla posizione rotante
+  const batch = [];
+  for (let i = 0; i < BATCH_SIZE && i < toFetch.length; i++) {
+    batch.push(toFetch[(rotationIndex + i) % toFetch.length]);
+  }
+  rotationIndex = (rotationIndex + BATCH_SIZE) % toFetch.length;
+
+  if (!batch.length) { console.log('Cache valida'); return buildResult(); }
+
+  console.log(`Fetch batch: ${batch.map(tk => SYMBOLS[tk]).join(', ')}`);
   let saved = 0;
 
-  // Stooq non ha rate limit dichiarato — processiamo in parallelo a gruppi di 10
-  const CHUNK = 10;
-  for (let i = 0; i < tickers.length; i += CHUNK) {
-    const chunk = tickers.slice(i, i + CHUNK);
-    await Promise.all(chunk.map(async tk => {
-      const sym = SYMBOLS[tk];
-      try {
-        const q = await stooqFetch(sym);
-        if (q) {
-          cache[tk] = { ts: now, ...q };
-          saved++;
-          console.log(`  ✓ ${sym}: ${q.price.toFixed(2)} (${q.changePct.toFixed(2)}%)`);
-        } else {
-          console.log(`  [skip] ${sym} — dati non disponibili`);
-        }
-      } catch(e) {
-        console.error(`  [err] ${sym}: ${e.message}`);
+  // Alpha Vantage free: max 5 req/min — una ogni 13 secondi per sicurezza
+  for (let i = 0; i < batch.length; i++) {
+    const tk = batch[i];
+    const sym = SYMBOLS[tk];
+    try {
+      const q = await avFetch(sym);
+      if (q) {
+        cache[tk] = { ts: now, ...q };
+        saved++;
+        console.log(`  ✓ ${sym}: ${q.price.toFixed(2)} (${q.changePct.toFixed(2)}%)`);
+      } else {
+        console.log(`  [skip] ${sym}`);
       }
-    }));
-    // Pausa 500ms tra chunk per non sovraccaricare Stooq
-    if (i + CHUNK < tickers.length) await new Promise(r => setTimeout(r, 500));
+    } catch(e) {
+      console.error(`  [err] ${sym}: ${e.message}`);
+    }
+    if (i < batch.length - 1) await new Promise(r => setTimeout(r, 13000)); // 13s tra chiamate
   }
 
-  console.log(`Fetch completato: ${saved}/${tickers.length} salvati`);
+  console.log(`Batch completato: ${saved}/${batch.length} salvati`);
   return buildResult();
 }
 
@@ -184,7 +182,7 @@ async function prefetchAll() {
   try {
     const quotes = await getQuotes();
     const n = Object.keys(quotes).length;
-    console.log(`[${new Date().toLocaleTimeString('it-IT')}] Prefetch completato — ${n} titoli`);
+    console.log(`[${new Date().toLocaleTimeString('it-IT')}] Prefetch completato — ${n} titoli in cache`);
     if (serverAlerts.filter(a=>a.status==='active').length > 0) checkAlerts(quotes);
   } catch(e) { console.error('Prefetch error:', e.message); }
   fetchInProgress = false;
@@ -210,7 +208,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/ping') {
     res.writeHead(200, CORS);
     res.end(JSON.stringify({ok:true, ts:Date.now(), cached:Object.keys(cache).length,
-      alerts:serverAlerts.filter(a=>a.status==='active').length, source:'stooq'}));
+      alerts:serverAlerts.filter(a=>a.status==='active').length, source:'alphavantage'}));
     return;
   }
 
@@ -236,12 +234,12 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ok:false, error:'not found'}));
 });
 
-// ✅ SERVER PRIMA, PREFETCH DOPO — Railway health check passa immediatamente
+// ✅ SERVER PRIMA, PREFETCH DOPO
 server.listen(PORT, () => {
   console.log(`\n╔══════════════════════════════════════╗`);
-  console.log(`║  TRADING DESK — Stooq                ║`);
+  console.log(`║  TRADING DESK — Alpha Vantage        ║`);
   console.log(`║  Porta: ${PORT}                        ║`);
   console.log(`╚══════════════════════════════════════╝\n`);
   prefetchAll();
-  setInterval(prefetchAll, 5 * 60 * 1000);
+  setInterval(prefetchAll, 6 * 60 * 1000); // ogni 6 minuti aggiorna il prossimo batch da 25
 });
