@@ -167,17 +167,16 @@ function tdFetchQuote(ticker) {
 
 // ── CACHE ──
 const cache = {};
-const CACHE_TTL = 15 * 60 * 1000; // 15 minuti
+const CACHE_TTL = 20 * 60 * 1000; // 20 minuti
 let fetchInProgress = false;
 
 async function getQuotes() {
   const now = Date.now();
   const allTickers = Object.keys(SYMBOLS);
 
-  // Prova prima batch veloce (solo prezzo) per tutti i titoli
   // Twelve Data free: 8 chiamate/minuto, 800/giorno
-  // Strategia: batch da 55 simboli per volta (2 chiamate quote singole)
-  // Usiamo /quote in sequenza con delay 8s tra chiamate = ~8 chiamate/minuto OK
+  // Delay 8s tra chiamate = rispetta rate limit
+  // Il fetch gira in background, non blocca il server
 
   const expired = allTickers.filter(tk => !cache[tk] || (now - cache[tk].ts) > CACHE_TTL);
   if (expired.length === 0) {
@@ -375,7 +374,11 @@ server.listen(PORT, () => {
   console.log(`╚══════════════════════════════════════╝\n`);
   if (!TD_KEY)     console.warn('⚠ TD_KEY non impostata — imposta variabile Railway');
   if (!GMAIL_PASS) console.warn('⚠ GMAIL_PASS non impostata — imposta variabile Railway');
-  prefetchAll();
-  // Ogni 20 minuti — compatibile con 800 chiamate/giorno Twelve Data free
-  setInterval(prefetchAll, 20 * 60 * 1000);
+
+  // Prefetch in background dopo 3s — non blocca l'avvio del server
+  setTimeout(() => {
+    prefetchAll();
+    // Ogni 25 minuti — compatibile con 800 chiamate/giorno Twelve Data free
+    setInterval(prefetchAll, 25 * 60 * 1000);
+  }, 3000);
 });
