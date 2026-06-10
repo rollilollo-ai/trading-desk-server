@@ -5,6 +5,3 @@
   "scripts": { "start": "node server_cloud.js" },
   "engines": { "node": ">=18.0.0" }
 }
-
-
-
