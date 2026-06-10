@@ -1,7 +1,6 @@
 const https = require('https');
 const http = require('http');
 
-const FINNHUB_KEY = 'd8kbs9hr01qjgd6u048gd8kbs9hr01qjgd6u0490';
 const GMAIL_USER = 'rollilollo@gmail.com';
 const GMAIL_PASS = 'vjbfhgzulcrlhrfe';
 const PORT = process.env.PORT || 3737;
@@ -13,7 +12,7 @@ const CORS = {
   'Content-Type': 'application/json'
 };
 
-// Finnhub usa simboli con suffisso borsa (es. SAP.DE, ENI.MI, ASML.AS)
+// Stooq usa stessa notazione: SAP.DE, ENI.MI, BNP.PA, ASML.AS, HSBA.L ecc.
 const SYMBOLS = {
   SAP:'SAP.DE', SIE:'SIE.DE', BAS:'BAS.DE', ALV:'ALV.DE',
   DTE:'DTE.DE', MUV2:'MUV2.DE', BMW:'BMW.DE', VOW3:'VOW3.DE',
@@ -34,37 +33,54 @@ const SYMBOLS = {
   AGN:'AGN.AS', AKZA:'AKZA.AS', DSM:'DSM.AS', UMG:'UMG.AS'
 };
 
-// ── FINNHUB — una chiamata per simbolo, ma 60 req/min sul piano free ──
-function finnhubQuote(symbol) {
+// ── STOOQ — CSV pubblico, gratuito, zero API key ──
+// URL: https://stooq.com/q/l/?s=SAP.DE&f=sd2t2ohlcv&h&e=csv
+// Risposta CSV: Symbol,Date,Time,Open,High,Low,Close,Volume
+function stooqFetch(symbol) {
   return new Promise((resolve, reject) => {
-    const path = `/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_KEY}`;
-    https.get({ hostname: 'finnhub.io', path, headers: { 'User-Agent': 'TradingDesk/1.0' } }, res => {
+    const s = symbol.toLowerCase();
+    const path = `/q/l/?s=${encodeURIComponent(s)}&f=sd2t2ohlcv&h&e=csv`;
+    const options = {
+      hostname: 'stooq.com',
+      path,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Referer': 'https://stooq.com/',
+      }
+    };
+    const req = https.get(options, res => {
       let d = '';
       res.on('data', c => d += c);
       res.on('end', () => {
         try {
-          const q = JSON.parse(d);
-          // q.c = current price, q.dp = change%, q.d = change, q.v = volume, q.pc = prev close, q.h = high, q.l = low
-          if (!q.c || q.c === 0) { resolve(null); return; }
-          resolve({
-            price: q.c,
-            changePct: q.dp || 0,
-            change: q.d || 0,
-            volume: q.v || 0,
-            prevClose: q.pc || q.c,
-            high: q.h || q.c,
-            low: q.l || q.c,
-          });
+          const lines = d.trim().split('\n');
+          // lines[0] = header, lines[1] = data
+          if (lines.length < 2) { resolve(null); return; }
+          const cols = lines[1].split(',');
+          // Symbol,Date,Time,Open,High,Low,Close,Volume
+          const close = parseFloat(cols[6]);
+          const open  = parseFloat(cols[3]);
+          const high  = parseFloat(cols[4]);
+          const low   = parseFloat(cols[5]);
+          const vol   = parseInt(cols[7]) || 0;
+          if (!close || isNaN(close) || close === 0) { resolve(null); return; }
+          const change    = close - open;
+          const changePct = open > 0 ? ((close - open) / open) * 100 : 0;
+          resolve({ price: close, changePct, change, volume: vol, prevClose: open, high, low });
         } catch(e) {
-          reject(new Error('JSON error: ' + d.substring(0, 100)));
+          reject(new Error('Parse error: ' + d.substring(0, 100)));
         }
       });
-    }).on('error', reject);
+    });
+    req.setTimeout(10000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.on('error', reject);
   });
 }
 
 const cache = {};
-const CACHE_TTL = 5 * 60 * 1000; // 5 minuti — Finnhub gratuito, 60 req/min
+const CACHE_TTL = 5 * 60 * 1000; // 5 minuti
 let fetchInProgress = false;
 
 async function getQuotes() {
@@ -73,26 +89,30 @@ async function getQuotes() {
 
   if (!tickers.length) { console.log('Cache valida'); return buildResult(); }
 
-  console.log(`Fetch ${tickers.length} simboli Finnhub...`);
+  console.log(`Fetch ${tickers.length} simboli Stooq...`);
   let saved = 0;
 
-  // Finnhub free: 60 req/min = 1 req/sec con margine — processiamo a ~1.1s per chiamata
-  for (let i = 0; i < tickers.length; i++) {
-    const tk = tickers[i];
-    const sym = SYMBOLS[tk];
-    try {
-      const q = await finnhubQuote(sym);
-      if (q) {
-        cache[tk] = { ts: now, ...q };
-        saved++;
-      } else {
-        console.log(`  [skip] ${sym} — prezzo vuoto`);
+  // Stooq non ha rate limit dichiarato — processiamo in parallelo a gruppi di 10
+  const CHUNK = 10;
+  for (let i = 0; i < tickers.length; i += CHUNK) {
+    const chunk = tickers.slice(i, i + CHUNK);
+    await Promise.all(chunk.map(async tk => {
+      const sym = SYMBOLS[tk];
+      try {
+        const q = await stooqFetch(sym);
+        if (q) {
+          cache[tk] = { ts: now, ...q };
+          saved++;
+          console.log(`  ✓ ${sym}: ${q.price.toFixed(2)} (${q.changePct.toFixed(2)}%)`);
+        } else {
+          console.log(`  [skip] ${sym} — dati non disponibili`);
+        }
+      } catch(e) {
+        console.error(`  [err] ${sym}: ${e.message}`);
       }
-    } catch(e) {
-      console.error(`  [err] ${sym}: ${e.message}`);
-    }
-    // Pausa 1.1 secondi tra ogni chiamata per rispettare il rate limit 60/min
-    if (i < tickers.length - 1) await new Promise(r => setTimeout(r, 1100));
+    }));
+    // Pausa 500ms tra chunk per non sovraccaricare Stooq
+    if (i + CHUNK < tickers.length) await new Promise(r => setTimeout(r, 500));
   }
 
   console.log(`Fetch completato: ${saved}/${tickers.length} salvati`);
@@ -112,7 +132,8 @@ function sendEmail(to, subject, body) {
     let step = 0;
     const b64 = s => Buffer.from(s).toString('base64');
     const auth = b64(`\0${GMAIL_USER}\0${GMAIL_PASS}`);
-    const msg = [`From: Trading Desk <${GMAIL_USER}>`,`To: ${to}`,`Subject: ${subject}`,`MIME-Version: 1.0`,`Content-Type: text/plain; charset=utf-8`,``,body].join('\r\n');
+    const msg = [`From: Trading Desk <${GMAIL_USER}>`,`To: ${to}`,`Subject: ${subject}`,
+      `MIME-Version: 1.0`,`Content-Type: text/plain; charset=utf-8`,``,body].join('\r\n');
     const socket = createConnection({ host: 'smtp.gmail.com', port: 465 });
     socket.setTimeout(15000);
     const send = c => socket.write(c + '\r\n');
@@ -147,7 +168,8 @@ function checkAlerts(quotes) {
       a.notifiedAt = Date.now();
       a.status = price <= a.target ? 'triggered-down' : 'triggered-up';
       const subject = `🔔 Alert ${a.ticker} — ${price.toFixed(2)} ${['below','stop'].includes(a.type)?'↓':'↑'} ${a.target}`;
-      const body = [`Alert: ${a.ticker}`,`Prezzo: ${price.toFixed(4)}`,`Target: ${a.target}`,a.emailmsg||'',`— Trading Desk · ${new Date().toLocaleString('it-IT')}`].filter(Boolean).join('\n');
+      const body = [`Alert: ${a.ticker}`,`Prezzo: ${price.toFixed(4)}`,`Target: ${a.target}`,
+        a.emailmsg||'',`— Trading Desk · ${new Date().toLocaleString('it-IT')}`].filter(Boolean).join('\n');
       try { await sendEmail(a.email, subject, body); console.log(`✉ ${a.ticker} → ${a.email}`); }
       catch(e) { console.error(`✗ Email:`, e.message); }
     }
@@ -176,21 +198,27 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/' || url.pathname === '/screener') {
     const fs = require('fs'), path = require('path');
     const f = path.join(__dirname, 'screener_pullback_v4_dark.html');
-    if (fs.existsSync(f)) { res.writeHead(200, {'Content-Type':'text/html;charset=utf-8'}); res.end(fs.readFileSync(f,'utf8')); }
-    else { res.writeHead(404, CORS); res.end('HTML non trovato'); }
+    if (fs.existsSync(f)) {
+      res.writeHead(200, {'Content-Type':'text/html;charset=utf-8'});
+      res.end(fs.readFileSync(f,'utf8'));
+    } else {
+      res.writeHead(404, CORS); res.end('HTML non trovato');
+    }
     return;
   }
 
   if (url.pathname === '/ping') {
     res.writeHead(200, CORS);
-    res.end(JSON.stringify({ok:true, ts:Date.now(), cached:Object.keys(cache).length, alerts:serverAlerts.filter(a=>a.status==='active').length, source:'finnhub'}));
+    res.end(JSON.stringify({ok:true, ts:Date.now(), cached:Object.keys(cache).length,
+      alerts:serverAlerts.filter(a=>a.status==='active').length, source:'stooq'}));
     return;
   }
 
   if (url.pathname === '/quotes') {
     const result = buildResult();
     res.writeHead(200, CORS);
-    res.end(JSON.stringify({ok:true, data:result, cached:Object.keys(result).length, fetching:fetchInProgress, ts:Date.now()}));
+    res.end(JSON.stringify({ok:true, data:result, cached:Object.keys(result).length,
+      fetching:fetchInProgress, ts:Date.now()}));
     return;
   }
 
@@ -208,15 +236,12 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ok:false, error:'not found'}));
 });
 
-// ✅ FIX RAILWAY: server parte PRIMA, prefetch parte DOPO
+// ✅ SERVER PRIMA, PREFETCH DOPO — Railway health check passa immediatamente
 server.listen(PORT, () => {
   console.log(`\n╔══════════════════════════════════════╗`);
-  console.log(`║  TRADING DESK — Finnhub              ║`);
+  console.log(`║  TRADING DESK — Stooq                ║`);
   console.log(`║  Porta: ${PORT}                        ║`);
   console.log(`╚══════════════════════════════════════╝\n`);
-
-  // Prefetch avviato DOPO che il server è in ascolto
   prefetchAll();
-  // Aggiornamento ogni 5 minuti
   setInterval(prefetchAll, 5 * 60 * 1000);
 });
