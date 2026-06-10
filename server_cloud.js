@@ -50,7 +50,7 @@ function fmpFetch(symbols) {
 }
 
 const cache = {};
-const CACHE_TTL = 60 * 60 * 1000;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minuti — Yahoo Finance è gratuito, nessun limite crediti
 let fetchInProgress = false;
 
 async function getQuotes() {
@@ -64,7 +64,6 @@ async function getQuotes() {
   if (!toFetch.length) { console.log('Cache valida'); return buildResult(); }
 
   console.log(`Fetch ${toFetch.length} simboli FMP...`);
-  // FMP supporta batch grandi in una sola chiamata
   const BATCH = 30;
   for (let i = 0; i < toFetch.length; i += BATCH) {
     const batch = toFetch.slice(i, i + BATCH);
@@ -163,9 +162,6 @@ async function prefetchAll() {
   fetchInProgress = false;
 }
 
-prefetchAll();
-setInterval(prefetchAll, 60 * 60 * 1000);
-
 // ── HTTP SERVER ──
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS); res.end(); return; }
@@ -206,9 +202,16 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ok:false, error:'not found'}));
 });
 
+// ✅ FIX RAILWAY: server parte PRIMA, prefetch parte DOPO
+// Così Railway passa l'health check e non manda SIGTERM
 server.listen(PORT, () => {
   console.log(`\n╔══════════════════════════════════════╗`);
   console.log(`║  TRADING DESK — FMP                  ║`);
   console.log(`║  Porta: ${PORT}                        ║`);
   console.log(`╚══════════════════════════════════════╝\n`);
+
+  // Prefetch avviato DOPO che il server è in ascolto
+  prefetchAll();
+  // Refresh ogni 5 minuti (Yahoo Finance gratuito, nessun limite crediti)
+  setInterval(prefetchAll, 5 * 60 * 1000);
 });
