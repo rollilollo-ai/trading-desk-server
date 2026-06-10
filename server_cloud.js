@@ -1,7 +1,6 @@
 const https = require('https');
 const http = require('http');
 
-const FMP_KEY = 'eCP5esV70PtRsajOonY63nwrFjfG90WA';
 const GMAIL_USER = 'rollilollo@gmail.com';
 const GMAIL_PASS = 'vjbfhgzulcrlhrfe';
 const PORT = process.env.PORT || 3737;
@@ -13,8 +12,8 @@ const CORS = {
   'Content-Type': 'application/json'
 };
 
-// FMP usa simboli con suffisso borsa
-const FMP_SYMBOLS = {
+// Yahoo Finance usa suffissi borsa identici a FMP — nessun cambio simboli
+const SYMBOLS = {
   SAP:'SAP.DE', SIE:'SIE.DE', BAS:'BAS.DE', ALV:'ALV.DE',
   DTE:'DTE.DE', MUV2:'MUV2.DE', BMW:'BMW.DE', VOW3:'VOW3.DE',
   DBK:'DBK.DE', MBG:'MBG.DE', BAYN:'BAYN.DE', ADS:'ADS.DE',
@@ -34,68 +33,90 @@ const FMP_SYMBOLS = {
   AGN:'AGN.AS', AKZA:'AKZA.AS', DSM:'DSM.AS', UMG:'UMG.AS'
 };
 
-function fmpFetch(symbols) {
+// ── YAHOO FINANCE — chiamata HTTP diretta, zero dipendenze ──
+function yahooFetch(symbols) {
   return new Promise((resolve, reject) => {
     const syms = symbols.join(',');
-    const path = `/api/v3/quote/${encodeURIComponent(syms)}?apikey=${FMP_KEY}`;
-    https.get({ hostname: 'financialmodelingprep.com', path, headers: { 'User-Agent': 'TradingDesk/1.0' } }, res => {
+    const fields = 'regularMarketPrice,regularMarketChangePercent,regularMarketChange,regularMarketVolume,regularMarketPreviousClose,regularMarketDayHigh,regularMarketDayLow';
+    const path = `/v7/finance/quote?symbols=${encodeURIComponent(syms)}&fields=${fields}&lang=en-US&region=US`;
+    const options = {
+      hostname: 'query1.finance.yahoo.com',
+      path,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+      }
+    };
+    https.get(options, res => {
       let d = '';
       res.on('data', c => d += c);
       res.on('end', () => {
-        try { resolve(JSON.parse(d)); }
-        catch(e) { reject(new Error('JSON error: ' + d.substring(0, 200))); }
+        try {
+          const json = JSON.parse(d);
+          const results = json?.quoteResponse?.result;
+          if (!Array.isArray(results)) {
+            reject(new Error('Yahoo risposta non valida: ' + d.substring(0, 200)));
+          } else {
+            resolve(results);
+          }
+        } catch(e) {
+          reject(new Error('JSON error: ' + d.substring(0, 200)));
+        }
       });
     }).on('error', reject);
   });
 }
 
 const cache = {};
-const CACHE_TTL = 5 * 60 * 1000; // 5 minuti — Yahoo Finance è gratuito, nessun limite crediti
+const CACHE_TTL = 5 * 60 * 1000; // 5 minuti — Yahoo Finance gratuito, nessun limite
 let fetchInProgress = false;
 
 async function getQuotes() {
   const now = Date.now();
-  const allSyms = Object.values(FMP_SYMBOLS);
+  const allSyms = Object.values(SYMBOLS);
   const toFetch = allSyms.filter(s => {
-    const tk = Object.keys(FMP_SYMBOLS).find(k => FMP_SYMBOLS[k] === s);
+    const tk = Object.keys(SYMBOLS).find(k => SYMBOLS[k] === s);
     return !cache[tk] || (now - cache[tk].ts) > CACHE_TTL;
   });
 
   if (!toFetch.length) { console.log('Cache valida'); return buildResult(); }
 
-  console.log(`Fetch ${toFetch.length} simboli FMP...`);
-  const BATCH = 30;
+  console.log(`Fetch ${toFetch.length} simboli Yahoo Finance...`);
+  // Yahoo Finance v7 supporta batch fino a ~100 simboli in una chiamata
+  const BATCH = 50;
   for (let i = 0; i < toFetch.length; i += BATCH) {
     const batch = toFetch.slice(i, i + BATCH);
     try {
-      const data = await fmpFetch(batch);
-      if (!Array.isArray(data)) { console.error('FMP risposta non array:', JSON.stringify(data).substring(0,200)); continue; }
+      const data = await yahooFetch(batch);
       let saved = 0;
       data.forEach(q => {
-        const tk = Object.keys(FMP_SYMBOLS).find(k => FMP_SYMBOLS[k] === q.symbol);
-        if (!tk || !q.price) return;
+        const tk = Object.keys(SYMBOLS).find(k => SYMBOLS[k] === q.symbol);
+        if (!tk || !q.regularMarketPrice) return;
         cache[tk] = {
           ts: now,
-          price: q.price,
-          changePct: q.changesPercentage || 0,
-          change: q.change || 0,
-          volume: q.volume || 0,
-          prevClose: q.previousClose || q.price,
-          high: q.dayHigh || q.price,
-          low: q.dayLow || q.price,
+          price: q.regularMarketPrice,
+          changePct: q.regularMarketChangePercent || 0,
+          change: q.regularMarketChange || 0,
+          volume: q.regularMarketVolume || 0,
+          prevClose: q.regularMarketPreviousClose || q.regularMarketPrice,
+          high: q.regularMarketDayHigh || q.regularMarketPrice,
+          low: q.regularMarketDayLow || q.regularMarketPrice,
         };
         saved++;
       });
       console.log(`  Batch ${Math.floor(i/BATCH)+1}: ${saved}/${batch.length} salvati`);
-    } catch(e) { console.error('FMP batch error:', e.message); }
-    if (i + BATCH < toFetch.length) await new Promise(r => setTimeout(r, 500));
+    } catch(e) {
+      console.error('Yahoo batch error:', e.message);
+    }
+    if (i + BATCH < toFetch.length) await new Promise(r => setTimeout(r, 300));
   }
   return buildResult();
 }
 
 function buildResult() {
   const r = {};
-  Object.keys(FMP_SYMBOLS).forEach(tk => { if (cache[tk]) r[tk] = cache[tk]; });
+  Object.keys(SYMBOLS).forEach(tk => { if (cache[tk]) r[tk] = cache[tk]; });
   return r;
 }
 
@@ -177,7 +198,7 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/ping') {
     res.writeHead(200, CORS);
-    res.end(JSON.stringify({ok:true, ts:Date.now(), cached:Object.keys(cache).length, alerts:serverAlerts.filter(a=>a.status==='active').length}));
+    res.end(JSON.stringify({ok:true, ts:Date.now(), cached:Object.keys(cache).length, alerts:serverAlerts.filter(a=>a.status==='active').length, source:'yahoo-finance'}));
     return;
   }
 
@@ -203,15 +224,15 @@ const server = http.createServer(async (req, res) => {
 });
 
 // ✅ FIX RAILWAY: server parte PRIMA, prefetch parte DOPO
-// Così Railway passa l'health check e non manda SIGTERM
+// Railway passa l'health check immediatamente, niente più SIGTERM
 server.listen(PORT, () => {
   console.log(`\n╔══════════════════════════════════════╗`);
-  console.log(`║  TRADING DESK — FMP                  ║`);
+  console.log(`║  TRADING DESK — Yahoo Finance        ║`);
   console.log(`║  Porta: ${PORT}                        ║`);
   console.log(`╚══════════════════════════════════════╝\n`);
 
   // Prefetch avviato DOPO che il server è in ascolto
   prefetchAll();
-  // Refresh ogni 5 minuti (Yahoo Finance gratuito, nessun limite crediti)
+  // Aggiornamento ogni 5 minuti (Yahoo Finance gratuito, nessun limite)
   setInterval(prefetchAll, 5 * 60 * 1000);
 });
