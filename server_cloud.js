@@ -1,6 +1,7 @@
 const https = require('https');
 const http = require('http');
 
+const FINNHUB_KEY = 'd8kbs9hr01qjgd6u048gd8kbs9hr01qjgd6u0490';
 const GMAIL_USER = 'rollilollo@gmail.com';
 const GMAIL_PASS = 'vjbfhgzulcrlhrfe';
 const PORT = process.env.PORT || 3737;
@@ -12,7 +13,7 @@ const CORS = {
   'Content-Type': 'application/json'
 };
 
-// Yahoo Finance usa suffissi borsa identici a FMP — nessun cambio simboli
+// Finnhub usa simboli con suffisso borsa (es. SAP.DE, ENI.MI, ASML.AS)
 const SYMBOLS = {
   SAP:'SAP.DE', SIE:'SIE.DE', BAS:'BAS.DE', ALV:'ALV.DE',
   DTE:'DTE.DE', MUV2:'MUV2.DE', BMW:'BMW.DE', VOW3:'VOW3.DE',
@@ -33,35 +34,29 @@ const SYMBOLS = {
   AGN:'AGN.AS', AKZA:'AKZA.AS', DSM:'DSM.AS', UMG:'UMG.AS'
 };
 
-// ── YAHOO FINANCE — chiamata HTTP diretta, zero dipendenze ──
-function yahooFetch(symbols) {
+// ── FINNHUB — una chiamata per simbolo, ma 60 req/min sul piano free ──
+function finnhubQuote(symbol) {
   return new Promise((resolve, reject) => {
-    const syms = symbols.join(',');
-    const fields = 'regularMarketPrice,regularMarketChangePercent,regularMarketChange,regularMarketVolume,regularMarketPreviousClose,regularMarketDayHigh,regularMarketDayLow';
-    const path = `/v7/finance/quote?symbols=${encodeURIComponent(syms)}&fields=${fields}&lang=en-US&region=US`;
-    const options = {
-      hostname: 'query1.finance.yahoo.com',
-      path,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9',
-      }
-    };
-    https.get(options, res => {
+    const path = `/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_KEY}`;
+    https.get({ hostname: 'finnhub.io', path, headers: { 'User-Agent': 'TradingDesk/1.0' } }, res => {
       let d = '';
       res.on('data', c => d += c);
       res.on('end', () => {
         try {
-          const json = JSON.parse(d);
-          const results = json?.quoteResponse?.result;
-          if (!Array.isArray(results)) {
-            reject(new Error('Yahoo risposta non valida: ' + d.substring(0, 200)));
-          } else {
-            resolve(results);
-          }
+          const q = JSON.parse(d);
+          // q.c = current price, q.dp = change%, q.d = change, q.v = volume, q.pc = prev close, q.h = high, q.l = low
+          if (!q.c || q.c === 0) { resolve(null); return; }
+          resolve({
+            price: q.c,
+            changePct: q.dp || 0,
+            change: q.d || 0,
+            volume: q.v || 0,
+            prevClose: q.pc || q.c,
+            high: q.h || q.c,
+            low: q.l || q.c,
+          });
         } catch(e) {
-          reject(new Error('JSON error: ' + d.substring(0, 200)));
+          reject(new Error('JSON error: ' + d.substring(0, 100)));
         }
       });
     }).on('error', reject);
@@ -69,48 +64,38 @@ function yahooFetch(symbols) {
 }
 
 const cache = {};
-const CACHE_TTL = 5 * 60 * 1000; // 5 minuti — Yahoo Finance gratuito, nessun limite
+const CACHE_TTL = 5 * 60 * 1000; // 5 minuti — Finnhub gratuito, 60 req/min
 let fetchInProgress = false;
 
 async function getQuotes() {
   const now = Date.now();
-  const allSyms = Object.values(SYMBOLS);
-  const toFetch = allSyms.filter(s => {
-    const tk = Object.keys(SYMBOLS).find(k => SYMBOLS[k] === s);
-    return !cache[tk] || (now - cache[tk].ts) > CACHE_TTL;
-  });
+  const tickers = Object.keys(SYMBOLS).filter(tk => !cache[tk] || (now - cache[tk].ts) > CACHE_TTL);
 
-  if (!toFetch.length) { console.log('Cache valida'); return buildResult(); }
+  if (!tickers.length) { console.log('Cache valida'); return buildResult(); }
 
-  console.log(`Fetch ${toFetch.length} simboli Yahoo Finance...`);
-  // Yahoo Finance v7 supporta batch fino a ~100 simboli in una chiamata
-  const BATCH = 50;
-  for (let i = 0; i < toFetch.length; i += BATCH) {
-    const batch = toFetch.slice(i, i + BATCH);
+  console.log(`Fetch ${tickers.length} simboli Finnhub...`);
+  let saved = 0;
+
+  // Finnhub free: 60 req/min = 1 req/sec con margine — processiamo a ~1.1s per chiamata
+  for (let i = 0; i < tickers.length; i++) {
+    const tk = tickers[i];
+    const sym = SYMBOLS[tk];
     try {
-      const data = await yahooFetch(batch);
-      let saved = 0;
-      data.forEach(q => {
-        const tk = Object.keys(SYMBOLS).find(k => SYMBOLS[k] === q.symbol);
-        if (!tk || !q.regularMarketPrice) return;
-        cache[tk] = {
-          ts: now,
-          price: q.regularMarketPrice,
-          changePct: q.regularMarketChangePercent || 0,
-          change: q.regularMarketChange || 0,
-          volume: q.regularMarketVolume || 0,
-          prevClose: q.regularMarketPreviousClose || q.regularMarketPrice,
-          high: q.regularMarketDayHigh || q.regularMarketPrice,
-          low: q.regularMarketDayLow || q.regularMarketPrice,
-        };
+      const q = await finnhubQuote(sym);
+      if (q) {
+        cache[tk] = { ts: now, ...q };
         saved++;
-      });
-      console.log(`  Batch ${Math.floor(i/BATCH)+1}: ${saved}/${batch.length} salvati`);
+      } else {
+        console.log(`  [skip] ${sym} — prezzo vuoto`);
+      }
     } catch(e) {
-      console.error('Yahoo batch error:', e.message);
+      console.error(`  [err] ${sym}: ${e.message}`);
     }
-    if (i + BATCH < toFetch.length) await new Promise(r => setTimeout(r, 300));
+    // Pausa 1.1 secondi tra ogni chiamata per rispettare il rate limit 60/min
+    if (i < tickers.length - 1) await new Promise(r => setTimeout(r, 1100));
   }
+
+  console.log(`Fetch completato: ${saved}/${tickers.length} salvati`);
   return buildResult();
 }
 
@@ -198,7 +183,7 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/ping') {
     res.writeHead(200, CORS);
-    res.end(JSON.stringify({ok:true, ts:Date.now(), cached:Object.keys(cache).length, alerts:serverAlerts.filter(a=>a.status==='active').length, source:'yahoo-finance'}));
+    res.end(JSON.stringify({ok:true, ts:Date.now(), cached:Object.keys(cache).length, alerts:serverAlerts.filter(a=>a.status==='active').length, source:'finnhub'}));
     return;
   }
 
@@ -224,15 +209,14 @@ const server = http.createServer(async (req, res) => {
 });
 
 // ✅ FIX RAILWAY: server parte PRIMA, prefetch parte DOPO
-// Railway passa l'health check immediatamente, niente più SIGTERM
 server.listen(PORT, () => {
   console.log(`\n╔══════════════════════════════════════╗`);
-  console.log(`║  TRADING DESK — Yahoo Finance        ║`);
+  console.log(`║  TRADING DESK — Finnhub              ║`);
   console.log(`║  Porta: ${PORT}                        ║`);
   console.log(`╚══════════════════════════════════════╝\n`);
 
   // Prefetch avviato DOPO che il server è in ascolto
   prefetchAll();
-  // Aggiornamento ogni 5 minuti (Yahoo Finance gratuito, nessun limite)
+  // Aggiornamento ogni 5 minuti
   setInterval(prefetchAll, 5 * 60 * 1000);
 });
