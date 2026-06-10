@@ -1,7 +1,7 @@
 const https = require('https');
 const http = require('http');
 
-const AV_KEY = '2XVXL4BE27PUEXD6';  // <-- da sostituire
+const AV_KEY = '2XVXL4BE27PUEXD6';
 const GMAIL_USER = 'rollilollo@gmail.com';
 const GMAIL_PASS = 'vjbfhgzulcrlhrfe';
 const PORT = process.env.PORT || 3737;
@@ -13,26 +13,27 @@ const CORS = {
   'Content-Type': 'application/json'
 };
 
-// Alpha Vantage usa simboli con suffisso borsa: SAP.DEX, ENI.MIL, BNP.PAR ecc.
-// Mappa ticker interno -> simbolo Alpha Vantage
+// Alpha Vantage formato corretto per Europa: PREFISSO:TICKER
+// ETR = Xetra/Frankfurt, EPA = Euronext Paris, LON = London, BIT = Borsa Italiana
+// BME = Madrid, AMS = Euronext Amsterdam
 const SYMBOLS = {
-  SAP:'SAP.DEX',   SIE:'SIE.DEX',   BAS:'BAS.DEX',   ALV:'ALV.DEX',
-  DTE:'DTE.DEX',   MUV2:'MUV2.DEX', BMW:'BMW.DEX',   VOW3:'VOW3.DEX',
-  DBK:'DBK.DEX',   MBG:'MBG.DEX',   BAYN:'BAYN.DEX', ADS:'ADS.DEX',
-  BNP:'BNP.PAR',   AI:'AI.PAR',     MC:'MC.PAR',     SAN:'SAN.PAR',
-  TTE:'TTE.PAR',   OR:'OR.PAR',     SGO:'SGO.PAR',   SU:'SU.PAR',
-  KER:'KER.PAR',   CAP:'CAP.PAR',   ACA:'ACA.PAR',
-  HSBA:'HSBA.LON', AZN:'AZN.LON',   SHEL:'SHEL.LON', LSEG:'LSEG.LON',
-  ULVR:'ULVR.LON', GSK:'GSK.LON',   RIO:'RIO.LON',   LLOY:'LLOY.LON',
-  BP:'BP.LON',     VOD:'VOD.LON',    BARC:'BARC.LON', DGE:'DGE.LON',
-  ENI:'ENI.MIL',   UCG:'UCG.MIL',   ISP:'ISP.MIL',   ENEL:'ENEL.MIL',
-  STM:'STM.MIL',   TIT:'TIT.MIL',   G:'G.MIL',       MB:'MB.MIL',
-  LDO:'LDO.MIL',   RACE:'RACE.MIL',
-  ITX:'ITX.MCD',   IBE:'IBE.MCD',   BBVA:'BBVA.MCD', BSAN:'SAN.MCD',
-  TEF:'TEF.MCD',   REP:'REP.MCD',   ACS:'ACS.MCD',   CLNX:'CLNX.MCD',
-  ASML:'ASML.AMS', ADYEN:'ADYEN.AMS',HEIA:'HEIA.AMS', PHIA:'PHIA.AMS',
-  NN:'NN.AMS',     AD:'AD.AMS',     RAND:'RAND.AMS', WKL:'WKL.AMS',
-  AGN:'AGN.AMS',   AKZA:'AKZA.AMS', DSM:'DSM.AMS',   UMG:'UMG.AMS'
+  SAP:'ETR:SAP',    SIE:'ETR:SIE',    BAS:'ETR:BAS',    ALV:'ETR:ALV',
+  DTE:'ETR:DTE',    MUV2:'ETR:MUV2',  BMW:'ETR:BMW',    VOW3:'ETR:VOW3',
+  DBK:'ETR:DBK',    MBG:'ETR:MBG',    BAYN:'ETR:BAYN',  ADS:'ETR:ADS',
+  BNP:'EPA:BNP',    AI:'EPA:AI',      MC:'EPA:MC',      SAN:'EPA:SAN',
+  TTE:'EPA:TTE',    OR:'EPA:OR',      SGO:'EPA:SGO',    SU:'EPA:SU',
+  KER:'EPA:KER',    CAP:'EPA:CAP',    ACA:'EPA:ACA',
+  HSBA:'LON:HSBA',  AZN:'LON:AZN',    SHEL:'LON:SHEL',  LSEG:'LON:LSEG',
+  ULVR:'LON:ULVR',  GSK:'LON:GSK',    RIO:'LON:RIO',    LLOY:'LON:LLOY',
+  BP:'LON:BP',      VOD:'LON:VOD',    BARC:'LON:BARC',  DGE:'LON:DGE',
+  ENI:'BIT:ENI',    UCG:'BIT:UCG',    ISP:'BIT:ISP',    ENEL:'BIT:ENEL',
+  STM:'BIT:STM',    TIT:'BIT:TIT',    G:'BIT:G',        MB:'BIT:MB',
+  LDO:'BIT:LDO',    RACE:'BIT:RACE',
+  ITX:'BME:ITX',    IBE:'BME:IBE',    BBVA:'BME:BBVA',  BSAN:'BME:SAN',
+  TEF:'BME:TEF',    REP:'BME:REP',    ACS:'BME:ACS',    CLNX:'BME:CLNX',
+  ASML:'AMS:ASML',  ADYEN:'AMS:ADYEN',HEIA:'AMS:HEIA',  PHIA:'AMS:PHIA',
+  NN:'AMS:NN',      AD:'AMS:AD',      RAND:'AMS:RAND',  WKL:'AMS:WKL',
+  AGN:'AMS:AGN',    AKZA:'AMS:AKZA',  DSM:'AMS:DSM',    UMG:'AMS:UMG'
 };
 
 // ── ALPHA VANTAGE — GLOBAL_QUOTE ──
@@ -49,15 +50,20 @@ function avFetch(symbol) {
       res.on('end', () => {
         try {
           const json = JSON.parse(d);
+          // Controlla rate limit
+          if (json['Note'] || json['Information']) {
+            console.log('  [rate limit] AV:', (json['Note']||json['Information']).substring(0,80));
+            resolve(null); return;
+          }
           const q = json['Global Quote'];
           if (!q || !q['05. price']) { resolve(null); return; }
-          const price    = parseFloat(q['05. price']);
-          const prevClose= parseFloat(q['08. previous close']);
-          const change   = parseFloat(q['09. change']);
-          const changePct= parseFloat(q['10. change percent']?.replace('%',''));
-          const high     = parseFloat(q['03. high']);
-          const low      = parseFloat(q['04. low']);
-          const volume   = parseInt(q['06. volume']) || 0;
+          const price     = parseFloat(q['05. price']);
+          const prevClose = parseFloat(q['08. previous close']);
+          const change    = parseFloat(q['09. change']);
+          const changePct = parseFloat((q['10. change percent']||'0').replace('%',''));
+          const high      = parseFloat(q['03. high']);
+          const low       = parseFloat(q['04. low']);
+          const volume    = parseInt(q['06. volume']) || 0;
           if (!price || isNaN(price)) { resolve(null); return; }
           resolve({ price, changePct: changePct||0, change: change||0, volume, prevClose: prevClose||price, high: high||price, low: low||price });
         } catch(e) { reject(new Error('JSON error: ' + d.substring(0,150))); }
@@ -69,32 +75,28 @@ function avFetch(symbol) {
 }
 
 const cache = {};
-const CACHE_TTL = 15 * 60 * 1000; // 15 minuti — il giro completo dura ~15 min con 25 req/giorno
-const BATCH_SIZE = 25;             // Alpha Vantage free: 25 chiamate/giorno
+const CACHE_TTL = 15 * 60 * 1000;
 let fetchInProgress = false;
-let rotationIndex = 0;             // indice rotante: ogni run aggiorna 25 simboli diversi
+let rotationIndex = 0;
 
 async function getQuotes() {
   const now = Date.now();
   const allTickers = Object.keys(SYMBOLS);
-
-  // Priorità: prima quelli mai fetchati, poi quelli più vecchi
   const expired = allTickers.filter(tk => !cache[tk] || (now - cache[tk].ts) > CACHE_TTL);
   const toFetch = expired.length > 0 ? expired : allTickers;
 
-  // Prendi i prossimi BATCH_SIZE dalla posizione rotante
+  // Batch rotante da 25 simboli
   const batch = [];
-  for (let i = 0; i < BATCH_SIZE && i < toFetch.length; i++) {
+  for (let i = 0; i < 25 && i < toFetch.length; i++) {
     batch.push(toFetch[(rotationIndex + i) % toFetch.length]);
   }
-  rotationIndex = (rotationIndex + BATCH_SIZE) % toFetch.length;
+  rotationIndex = (rotationIndex + 25) % toFetch.length;
 
   if (!batch.length) { console.log('Cache valida'); return buildResult(); }
 
-  console.log(`Fetch batch: ${batch.map(tk => SYMBOLS[tk]).join(', ')}`);
+  console.log(`Fetch ${batch.length} simboli: ${batch.map(tk=>SYMBOLS[tk]).join(', ')}`);
   let saved = 0;
 
-  // Alpha Vantage free: max 5 req/min — una ogni 13 secondi per sicurezza
   for (let i = 0; i < batch.length; i++) {
     const tk = batch[i];
     const sym = SYMBOLS[tk];
@@ -110,7 +112,7 @@ async function getQuotes() {
     } catch(e) {
       console.error(`  [err] ${sym}: ${e.message}`);
     }
-    if (i < batch.length - 1) await new Promise(r => setTimeout(r, 13000)); // 13s tra chiamate
+    if (i < batch.length - 1) await new Promise(r => setTimeout(r, 13000));
   }
 
   console.log(`Batch completato: ${saved}/${batch.length} salvati`);
@@ -141,6 +143,7 @@ function sendEmail(to, subject, body) {
       else if (step===1&&l.startsWith('250-')) { }
       else if (step===1&&l.startsWith('250 ')) { send(`AUTH PLAIN ${auth}`); step++; }
       else if (step===2&&l.startsWith('235'))  { send(`MAIL FROM:<${GMAIL_USER}>`); step++; }
+      else if (step===3&&l.startsWith('250'))  { send(`MAIL FROM:<${GMAIL_USER}>`); step++; }
       else if (step===3&&l.startsWith('250'))  { send(`RCPT TO:<${to}>`); step++; }
       else if (step===4&&l.startsWith('250'))  { send('DATA'); step++; }
       else if (step===5&&l.startsWith('354'))  { send(msg+'\r\n.'); step++; }
@@ -241,5 +244,5 @@ server.listen(PORT, () => {
   console.log(`║  Porta: ${PORT}                        ║`);
   console.log(`╚══════════════════════════════════════╝\n`);
   prefetchAll();
-  setInterval(prefetchAll, 6 * 60 * 1000); // ogni 6 minuti aggiorna il prossimo batch da 25
+  setInterval(prefetchAll, 6 * 60 * 1000);
 });
