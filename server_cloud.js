@@ -15,23 +15,28 @@ const CORS = {
 
 // ── SIMBOLI TradingView formato EXCHANGE:TICKER ──
 const SYMBOLS = {
+  // DAX - Xetra
   SAP:   'XETR:SAP',   SIE:   'XETR:SIE',   BAS:   'XETR:BAS',   ALV:   'XETR:ALV',
   DTE:   'XETR:DTE',   MUV2:  'XETR:MUV2',  BMW:   'XETR:BMW',   VOW3:  'XETR:VOW3',
   DBK:   'XETR:DBK',   MBG:   'XETR:MBG',   BAYN:  'XETR:BAYN',  ADS:   'XETR:ADS',
-  BNP:   'XPAR:BNP',   AI:    'XPAR:AI',     MC:    'XPAR:MC',    SAN:   'XPAR:SAN',
-  TTE:   'XPAR:TTE',   OR:    'XPAR:OR',     SGO:   'XPAR:SGO',   SU:    'XPAR:SU',
-  KER:   'XPAR:KER',   CAP:   'XPAR:CAP',    ACA:   'XPAR:ACA',
-  HSBA:  'XLON:HSBA',  AZN:   'XLON:AZN',    SHEL:  'XLON:SHEL',  LSEG:  'XLON:LSEG',
-  ULVR:  'XLON:ULVR',  GSK:   'XLON:GSK',    RIO:   'XLON:RIO',   LLOY:  'XLON:LLOY',
-  BP:    'XLON:BP',    VOD:   'XLON:VOD',    BARC:  'XLON:BARC',  DGE:   'XLON:DGE',
-  ENI:   'XMIL:ENI',   UCG:   'XMIL:UCG',    ISP:   'XMIL:ISP',   ENEL:  'XMIL:ENEL',
-  STM:   'XMIL:STM',   TIT:   'XMIL:TIT',    G:     'XMIL:G',     MB:    'XMIL:MB',
-  LDO:   'XMIL:LDO',   RACE:  'XMIL:RACE',
-  ITX:   'XMAD:ITX',   IBE:   'XMAD:IBE',    BBVA:  'XMAD:BBVA',  BSAN:  'XMAD:SAN',
-  TEF:   'XMAD:TEF',   REP:   'XMAD:REP',    ACS:   'XMAD:ACS',   CLNX:  'XMAD:CLNX',
-  ASML:  'XAMS:ASML',  ADYEN: 'XAMS:ADYEN',  HEIA:  'XAMS:HEIA',  PHIA:  'XAMS:PHIA',
-  NN:    'XAMS:NN',    AD:    'XAMS:AD',      RAND:  'XAMS:RAND',  WKL:   'XAMS:WKL',
-  AGN:   'XAMS:AGN',   AKZA:  'XAMS:AKZA',   DSM:   'XAMS:DSM',   UMG:   'XAMS:UMG'
+  // CAC + AEX - Euronext
+  BNP:   'EURONEXT:BNP',  AI:    'EURONEXT:AI',    MC:    'EURONEXT:MC',   SAN:   'EURONEXT:SAN',
+  TTE:   'EURONEXT:TTE',  OR:    'EURONEXT:OR',    SGO:   'EURONEXT:SGO',  SU:    'EURONEXT:SU',
+  KER:   'EURONEXT:KER',  CAP:   'EURONEXT:CAP',   ACA:   'EURONEXT:ACA',
+  ASML:  'EURONEXT:ASML', ADYEN: 'EURONEXT:ADYEN', HEIA:  'EURONEXT:HEIA', PHIA:  'EURONEXT:PHIA',
+  NN:    'EURONEXT:NN',   AD:    'EURONEXT:AD',     RAND:  'EURONEXT:RAND', WKL:   'EURONEXT:WKL',
+  AGN:   'EURONEXT:AGN',  AKZA:  'EURONEXT:AKZA',  DSM:   'EURONEXT:DSM',  UMG:   'EURONEXT:UMG',
+  // FTSE 100 - London
+  HSBA:  'LSE:HSBA',  AZN:   'LSE:AZN',    SHEL:  'LSE:SHEL',  LSEG:  'LSE:LSEG',
+  ULVR:  'LSE:ULVR',  GSK:   'LSE:GSK',    RIO:   'LSE:RIO',   LLOY:  'LSE:LLOY',
+  BP:    'LSE:BP',    VOD:   'LSE:VOD',    BARC:  'LSE:BARC',  DGE:   'LSE:DGE',
+  // FTSE MIB - Borsa Italiana
+  ENI:   'MIL:ENI',   UCG:   'MIL:UCG',    ISP:   'MIL:ISP',   ENEL:  'MIL:ENEL',
+  STM:   'MIL:STM',   TIT:   'MIL:TIT',    G:     'MIL:G',     MB:    'MIL:MB',
+  LDO:   'MIL:LDO',   RACE:  'MIL:RACE',
+  // IBEX 35 - Madrid
+  ITX:   'BME:ITX',   IBE:   'BME:IBE',    BBVA:  'BME:BBVA',  BSAN:  'BME:SAN',
+  TEF:   'BME:TEF',   REP:   'BME:REP',    ACS:   'BME:ACS',   CLNX:  'BME:CLNX'
 };
 
 // ── TRADINGVIEW SCANNER ──
