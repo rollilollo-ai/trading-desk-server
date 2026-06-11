@@ -2,7 +2,6 @@ const https = require('https');
 const http = require('http');
 
 // ── CREDENZIALI DA VARIABILI D'AMBIENTE RAILWAY ──
-const TD_KEY     = process.env.TD_KEY;
 const GMAIL_USER = process.env.GMAIL_USER || 'rollilollo@gmail.com';
 const GMAIL_PASS = process.env.GMAIL_PASS;
 const PORT       = process.env.PORT || 3737;
@@ -14,206 +13,139 @@ const CORS = {
   'Content-Type': 'application/json'
 };
 
-// ── SIMBOLI — formato Twelve Data per Europa ──
-// Twelve Data: simbolo semplice + exchange separato
+// ── SIMBOLI TradingView formato EXCHANGE:TICKER ──
 const SYMBOLS = {
-  // DAX - Xetra
-  SAP:   { sym:'SAP',   ex:'XETR' },
-  SIE:   { sym:'SIE',   ex:'XETR' },
-  BAS:   { sym:'BAS',   ex:'XETR' },
-  ALV:   { sym:'ALV',   ex:'XETR' },
-  DTE:   { sym:'DTE',   ex:'XETR' },
-  MUV2:  { sym:'MUV2',  ex:'XETR' },
-  BMW:   { sym:'BMW',   ex:'XETR' },
-  VOW3:  { sym:'VOW3',  ex:'XETR' },
-  DBK:   { sym:'DBK',   ex:'XETR' },
-  MBG:   { sym:'MBG',   ex:'XETR' },
-  BAYN:  { sym:'BAYN',  ex:'XETR' },
-  ADS:   { sym:'ADS',   ex:'XETR' },
-  // CAC - Euronext Paris
-  BNP:   { sym:'BNP',   ex:'XPAR' },
-  AI:    { sym:'AI',    ex:'XPAR' },
-  MC:    { sym:'MC',    ex:'XPAR' },
-  SAN:   { sym:'SAN',   ex:'XPAR' },
-  TTE:   { sym:'TTE',   ex:'XPAR' },
-  OR:    { sym:'OR',    ex:'XPAR' },
-  SGO:   { sym:'SGO',   ex:'XPAR' },
-  SU:    { sym:'SU',    ex:'XPAR' },
-  KER:   { sym:'KER',   ex:'XPAR' },
-  CAP:   { sym:'CAP',   ex:'XPAR' },
-  ACA:   { sym:'ACA',   ex:'XPAR' },
-  // FTSE 100 - London
-  HSBA:  { sym:'HSBA',  ex:'XLON' },
-  AZN:   { sym:'AZN',   ex:'XLON' },
-  SHEL:  { sym:'SHEL',  ex:'XLON' },
-  LSEG:  { sym:'LSEG',  ex:'XLON' },
-  ULVR:  { sym:'ULVR',  ex:'XLON' },
-  GSK:   { sym:'GSK',   ex:'XLON' },
-  RIO:   { sym:'RIO',   ex:'XLON' },
-  LLOY:  { sym:'LLOY',  ex:'XLON' },
-  BP:    { sym:'BP',    ex:'XLON' },
-  VOD:   { sym:'VOD',   ex:'XLON' },
-  BARC:  { sym:'BARC',  ex:'XLON' },
-  DGE:   { sym:'DGE',   ex:'XLON' },
-  // FTSE MIB - Borsa Italiana
-  ENI:   { sym:'ENI',   ex:'XMIL' },
-  UCG:   { sym:'UCG',   ex:'XMIL' },
-  ISP:   { sym:'ISP',   ex:'XMIL' },
-  ENEL:  { sym:'ENEL',  ex:'XMIL' },
-  STM:   { sym:'STM',   ex:'XMIL' },
-  TIT:   { sym:'TIT',   ex:'XMIL' },
-  G:     { sym:'G',     ex:'XMIL' },
-  MB:    { sym:'MB',    ex:'XMIL' },
-  LDO:   { sym:'LDO',   ex:'XMIL' },
-  RACE:  { sym:'RACE',  ex:'XMIL' },
-  // IBEX 35 - Madrid
-  ITX:   { sym:'ITX',   ex:'XMAD' },
-  IBE:   { sym:'IBE',   ex:'XMAD' },
-  BBVA:  { sym:'BBVA',  ex:'XMAD' },
-  BSAN:  { sym:'SAN',   ex:'XMAD' },
-  TEF:   { sym:'TEF',   ex:'XMAD' },
-  REP:   { sym:'REP',   ex:'XMAD' },
-  ACS:   { sym:'ACS',   ex:'XMAD' },
-  CLNX:  { sym:'CLNX',  ex:'XMAD' },
-  // AEX - Amsterdam
-  ASML:  { sym:'ASML',  ex:'XAMS' },
-  ADYEN: { sym:'ADYEN', ex:'XAMS' },
-  HEIA:  { sym:'HEIA',  ex:'XAMS' },
-  PHIA:  { sym:'PHIA',  ex:'XAMS' },
-  NN:    { sym:'NN',    ex:'XAMS' },
-  AD:    { sym:'AD',    ex:'XAMS' },
-  RAND:  { sym:'RAND',  ex:'XAMS' },
-  WKL:   { sym:'WKL',   ex:'XAMS' },
-  AGN:   { sym:'AGN',   ex:'XAMS' },
-  AKZA:  { sym:'AKZA',  ex:'XAMS' },
-  DSM:   { sym:'DSM',   ex:'XAMS' },
-  UMG:   { sym:'UMG',   ex:'XAMS' }
+  SAP:   'XETR:SAP',   SIE:   'XETR:SIE',   BAS:   'XETR:BAS',   ALV:   'XETR:ALV',
+  DTE:   'XETR:DTE',   MUV2:  'XETR:MUV2',  BMW:   'XETR:BMW',   VOW3:  'XETR:VOW3',
+  DBK:   'XETR:DBK',   MBG:   'XETR:MBG',   BAYN:  'XETR:BAYN',  ADS:   'XETR:ADS',
+  BNP:   'XPAR:BNP',   AI:    'XPAR:AI',     MC:    'XPAR:MC',    SAN:   'XPAR:SAN',
+  TTE:   'XPAR:TTE',   OR:    'XPAR:OR',     SGO:   'XPAR:SGO',   SU:    'XPAR:SU',
+  KER:   'XPAR:KER',   CAP:   'XPAR:CAP',    ACA:   'XPAR:ACA',
+  HSBA:  'XLON:HSBA',  AZN:   'XLON:AZN',    SHEL:  'XLON:SHEL',  LSEG:  'XLON:LSEG',
+  ULVR:  'XLON:ULVR',  GSK:   'XLON:GSK',    RIO:   'XLON:RIO',   LLOY:  'XLON:LLOY',
+  BP:    'XLON:BP',    VOD:   'XLON:VOD',    BARC:  'XLON:BARC',  DGE:   'XLON:DGE',
+  ENI:   'XMIL:ENI',   UCG:   'XMIL:UCG',    ISP:   'XMIL:ISP',   ENEL:  'XMIL:ENEL',
+  STM:   'XMIL:STM',   TIT:   'XMIL:TIT',    G:     'XMIL:G',     MB:    'XMIL:MB',
+  LDO:   'XMIL:LDO',   RACE:  'XMIL:RACE',
+  ITX:   'XMAD:ITX',   IBE:   'XMAD:IBE',    BBVA:  'XMAD:BBVA',  BSAN:  'XMAD:SAN',
+  TEF:   'XMAD:TEF',   REP:   'XMAD:REP',    ACS:   'XMAD:ACS',   CLNX:  'XMAD:CLNX',
+  ASML:  'XAMS:ASML',  ADYEN: 'XAMS:ADYEN',  HEIA:  'XAMS:HEIA',  PHIA:  'XAMS:PHIA',
+  NN:    'XAMS:NN',    AD:    'XAMS:AD',      RAND:  'XAMS:RAND',  WKL:   'XAMS:WKL',
+  AGN:   'XAMS:AGN',   AKZA:  'XAMS:AKZA',   DSM:   'XAMS:DSM',   UMG:   'XAMS:UMG'
 };
 
-// ── TWELVE DATA — batch fino a 120 simboli per chiamata ──
-// Usiamo una sola chiamata con tutti i simboli separati da virgola
-function tdFetchBatch(tickers) {
+// ── TRADINGVIEW SCANNER ──
+function tvScan() {
   return new Promise((resolve, reject) => {
-    // Costruisce stringa "SYM/EX,SYM/EX,..."
-    const symbolStr = tickers.map(tk => {
-      const s = SYMBOLS[tk];
-      return `${s.sym}:${s.ex}`;
-    }).join(',');
+    const tickers = Object.values(SYMBOLS);
 
-    const path = `/price?symbol=${encodeURIComponent(symbolStr)}&apikey=${TD_KEY}`;
+    const payload = JSON.stringify({
+      symbols: {
+        tickers,
+        query: { types: [] }
+      },
+      columns: [
+        'name',
+        'close',
+        'change',
+        'change_abs',
+        'volume',
+        'average_volume_10d_calc',
+        'EMA50',
+        'EMA200',
+        'RSI',
+        'High.1M',
+        'Low.1M',
+        'VWAP'
+      ]
+    });
 
-    const req = https.get({
-      hostname: 'api.twelvedata.com',
-      path,
-      headers: { 'User-Agent': 'TradingDesk/2.0', 'Accept': 'application/json' }
+    const req = https.request({
+      hostname: 'scanner.tradingview.com',
+      path: '/global/scan',
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        'User-Agent':    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Origin':        'https://www.tradingview.com',
+        'Referer':       'https://www.tradingview.com/'
+      }
     }, res => {
       let d = '';
       res.on('data', c => d += c);
       res.on('end', () => {
         try {
           const json = JSON.parse(d);
-          // Rate limit o errore globale
-          if (json.code === 429 || json.status === 'error') {
-            console.log('  [TD] Errore API:', json.message || json.code);
-            resolve({});
-            return;
-          }
-          resolve(json);
+          if (!json.data) { resolve({}); return; }
+
+          const result = {};
+          // Mappa ticker TV → chiave interna
+          const reverseMap = {};
+          Object.entries(SYMBOLS).forEach(([k, v]) => reverseMap[v] = k);
+
+          json.data.forEach(item => {
+            const tvTicker = item.s;
+            const tk = reverseMap[tvTicker];
+            if (!tk) return;
+            const [, close, change, changeAbs, volume, avgVol, ema50, ema200, rsi, high1m, low1m, vwap] = item.d;
+            if (!close) return;
+            const prevClose = close - (changeAbs || 0);
+            result[tk] = {
+              price:     close,
+              changePct: change     || 0,
+              change:    changeAbs  || 0,
+              volume:    volume     || 0,
+              avgVolume: avgVol     || 0,
+              prevClose: prevClose  || close,
+              high:      close,
+              low:       close,
+              ema50:     ema50      || null,
+              ema200:    ema200     || null,
+              rsi:       rsi        || null,
+              high1m:    high1m     || null,
+              low1m:     low1m      || null,
+              vwap:      vwap       || null,
+              ts:        Date.now()
+            };
+          });
+
+          console.log(`  TV Scanner: ${Object.keys(result).length}/${tickers.length} titoli ricevuti`);
+          resolve(result);
         } catch(e) {
-          reject(new Error('JSON error: ' + d.substring(0, 150)));
+          reject(new Error('JSON error: ' + d.substring(0, 200)));
         }
       });
     });
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('timeout')); });
-    req.on('error', reject);
-  });
-}
 
-// Fetch quote singola per avere anche changePct, volume, high, low
-function tdFetchQuote(ticker) {
-  return new Promise((resolve, reject) => {
-    const s = SYMBOLS[ticker];
-    const path = `/quote?symbol=${encodeURIComponent(s.sym)}&exchange=${s.ex}&apikey=${TD_KEY}`;
-    const req = https.get({
-      hostname: 'api.twelvedata.com',
-      path,
-      headers: { 'User-Agent': 'TradingDesk/2.0', 'Accept': 'application/json' }
-    }, res => {
-      let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => {
-        try {
-          const q = JSON.parse(d);
-          if (q.status === 'error' || !q.close) { resolve(null); return; }
-          const price     = parseFloat(q.close);
-          const prevClose = parseFloat(q.previous_close) || price;
-          const changePct = prevClose ? ((price - prevClose) / prevClose * 100) : 0;
-          resolve({
-            price,
-            changePct,
-            change:    price - prevClose,
-            volume:    parseInt(q.volume) || 0,
-            prevClose,
-            high:      parseFloat(q.high)  || price,
-            low:       parseFloat(q.low)   || price
-          });
-        } catch(e) { reject(e); }
-      });
-    });
-    req.setTimeout(12000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.setTimeout(20000, () => { req.destroy(); reject(new Error('timeout')); });
     req.on('error', reject);
+    req.write(payload);
+    req.end();
   });
 }
 
 // ── CACHE ──
-const cache = {};
-const CACHE_TTL = 20 * 60 * 1000; // 20 minuti
+let cache = {};
 let fetchInProgress = false;
+const CACHE_TTL = 15 * 60 * 1000;
 
 async function getQuotes() {
-  const now = Date.now();
-  const allTickers = Object.keys(SYMBOLS);
-
-  // Twelve Data free: 8 chiamate/minuto, 800/giorno
-  // Delay 8s tra chiamate = rispetta rate limit
-  // Il fetch gira in background, non blocca il server
-
-  const expired = allTickers.filter(tk => !cache[tk] || (now - cache[tk].ts) > CACHE_TTL);
-  if (expired.length === 0) {
-    console.log('Cache valida, nessun fetch necessario');
-    return buildResult();
-  }
-
-  console.log(`Fetch ${expired.length} simboli scaduti...`);
-  let saved = 0;
-
-  for (let i = 0; i < expired.length; i++) {
-    const tk = expired[i];
-    try {
-      const q = await tdFetchQuote(tk);
-      if (q) {
-        cache[tk] = { ts: now, ...q };
-        saved++;
-        console.log(`  ✓ ${tk}: ${q.price.toFixed(2)} (${q.changePct.toFixed(2)}%)`);
-      } else {
-        console.log(`  [skip] ${tk}`);
-      }
-    } catch(e) {
-      console.error(`  [err] ${tk}: ${e.message}`);
+  try {
+    const fresh = await tvScan();
+    if (Object.keys(fresh).length > 0) {
+      cache = fresh;
+      console.log(`Cache aggiornata: ${Object.keys(cache).length} titoli`);
+    } else {
+      console.warn('TV Scanner ha restituito 0 titoli — mantengo cache precedente');
     }
-    // 8 secondi tra chiamate = rispetta limite 8/minuto Twelve Data free
-    if (i < expired.length - 1) await new Promise(r => setTimeout(r, 8000));
+  } catch(e) {
+    console.error('tvScan error:', e.message);
   }
-
-  console.log(`Fetch completato: ${saved}/${expired.length} salvati`);
-  return buildResult();
+  return cache;
 }
 
-function buildResult() {
-  const r = {};
-  Object.keys(SYMBOLS).forEach(tk => { if (cache[tk]) r[tk] = cache[tk]; });
-  return r;
-}
+function buildResult() { return { ...cache }; }
 
 // ── EMAIL ──
 function sendEmail(to, subject, body) {
@@ -264,7 +196,7 @@ function checkAlerts(quotes) {
     const price = q.price;
     const tol   = a.target * ((a.tol || 0.5) / 100);
     let triggered = false;
-    if (['below','stop','support'].includes(a.type)    && price <= a.target + tol) triggered = true;
+    if (['below','stop','support'].includes(a.type)     && price <= a.target + tol) triggered = true;
     if (['above','target','resistance'].includes(a.type) && price >= a.target - tol) triggered = true;
     if (triggered && !a.notifiedAt) {
       a.notifiedAt = Date.now();
@@ -296,7 +228,7 @@ async function prefetchAll() {
   try {
     const quotes = await getQuotes();
     const n = Object.keys(quotes).length;
-    console.log(`[${new Date().toLocaleTimeString('it-IT')}] Prefetch completato — ${n} titoli in cache`);
+    console.log(`[${new Date().toLocaleTimeString('it-IT')}] Prefetch OK — ${n} titoli`);
     if (serverAlerts.filter(a => a.status === 'active').length > 0) checkAlerts(quotes);
   } catch(e) {
     console.error('Prefetch error:', e.message);
@@ -329,7 +261,7 @@ const server = http.createServer(async (req, res) => {
       ok: true, ts: Date.now(),
       cached: Object.keys(cache).length,
       alerts: serverAlerts.filter(a => a.status === 'active').length,
-      source: 'twelvedata'
+      source: 'tradingview'
     }));
     return;
   }
@@ -343,6 +275,14 @@ const server = http.createServer(async (req, res) => {
       fetching: fetchInProgress,
       ts: Date.now()
     }));
+    return;
+  }
+
+  if (url.pathname === '/refresh' && req.method === 'POST') {
+    // Endpoint per forzare refresh manuale dal frontend
+    res.writeHead(200, CORS);
+    res.end(JSON.stringify({ ok: true, message: 'Refresh avviato' }));
+    setTimeout(prefetchAll, 100);
     return;
   }
 
@@ -369,16 +309,14 @@ const server = http.createServer(async (req, res) => {
 // ── AVVIO ──
 server.listen(PORT, () => {
   console.log(`\n╔══════════════════════════════════════╗`);
-  console.log(`║  TRADING DESK — Twelve Data          ║`);
+  console.log(`║  TRADING DESK — TradingView Scanner  ║`);
   console.log(`║  Porta: ${PORT}                        ║`);
   console.log(`╚══════════════════════════════════════╝\n`);
-  if (!TD_KEY)     console.warn('⚠ TD_KEY non impostata — imposta variabile Railway');
-  if (!GMAIL_PASS) console.warn('⚠ GMAIL_PASS non impostata — imposta variabile Railway');
+  if (!GMAIL_PASS) console.warn('⚠ GMAIL_PASS non impostata');
 
-  // Prefetch in background dopo 3s — non blocca l'avvio del server
+  // Prefetch immediato + ogni 15 minuti
   setTimeout(() => {
     prefetchAll();
-    // Ogni 25 minuti — compatibile con 800 chiamate/giorno Twelve Data free
-    setInterval(prefetchAll, 25 * 60 * 1000);
-  }, 3000);
+    setInterval(prefetchAll, 15 * 60 * 1000);
+  }, 2000);
 });
